@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# App (Electron)
+app/node_modules/
+app/dist/
+app/release/
+
+# Server
+server/data/
+__pycache__/
+*.pyc
+
+# Personal tools
+tools/
+
+# macOS
+.DS_Store
+server/config.*.yaml

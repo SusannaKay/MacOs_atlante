@@ -1,0 +1,23 @@
+# Cartelle/file della radice (STORAGE_PATH) da NON indicizzare.
+# "nome*" = percorso dalla radice del disco; "**/nome" = qualunque file/cartella con quel nome.
+exclude:
+  - "vault"             # le note: vengono lette a parte
+  - "lost+found"
+  - "**/.Trash*"
+  - "**/@eaDir"
+  - "**/.DS_Store"
+  - "**/._*"
+  - "**/node_modules"
+  - "**/.git"
+  # Esempi utili se sul server hai anche altri servizi:
+  # - "immich-*"                              # librerie di foto gestite da Immich
+  # - "data/torrents"                         # download in corso
+  # - "paperless/media/documents/archive"     # copie archiviate da Paperless (doppioni)
+  # - "paperless/media/documents/thumbnails"
+  # - "paperless/data"
+
+# ogni quanti minuti ricontrollare tutto il disco (le note invece ogni 30 secondi)
+rescan_minutes: 30
+
+# testo estratto dai PDF fino a questa dimensione (MB)
+text_max_mb: 50

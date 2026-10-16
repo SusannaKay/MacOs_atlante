@@ -1,0 +1,42 @@
+{
+  "name": "atlante",
+  "productName": "Atlante",
+  "version": "1.2.0",
+  "description": "Atlante: organizza i file del tuo server come in Obsidian",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && electron .",
+    "dist": "node build.mjs && electron-builder --mac dir --arm64"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.14",
+    "@fontsource/atkinson-hyperlegible-next": "5.3.0",
+    "@fontsource-variable/source-serif-4": "5.3.1",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@lezer/highlight": "1.2.5",
+    "d3-force": "3.0.0",
+    "d3-selection": "3.0.0",
+    "d3-zoom": "3.0.0",
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "markdown-it": "15.0.2",
+    "yaml": "2.9.1"
+  },
+  "build": {
+    "appId": "it.sus.atlante",
+    "productName": "Atlante",
+    "files": ["main.js", "preload.js", "ai-worker.js", "dist/**/*", "package.json"],
+    "directories": { "output": "release" },
+    "mac": { "category": "public.app-category.productivity", "icon": "build/icon.png", "target": ["dir"] }
+  }
+}

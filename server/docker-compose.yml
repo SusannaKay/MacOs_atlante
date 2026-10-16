@@ -1,0 +1,25 @@
+services:
+  atlante:
+    build: .
+    image: atlante-server:local
+    container_name: atlante
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    env_file: .env
+    environment:
+      - ATLANTE_STORAGE=/storage
+      - ATLANTE_VAULT=/vault
+      - ATLANTE_DATA=/data
+      - ATLANTE_CONFIG=/app/config.yaml
+      - ATLANTE_STORAGE_LABEL=${STORAGE_PATH:-/mnt/storage}
+      - ATLANTE_VAULT_LABEL=${VAULT_PATH:-/mnt/storage/vault}
+    volumes:
+      # tutto il disco in SOLA LETTURA: Atlante non può modificare nulla qui
+      - ${STORAGE_PATH:-/mnt/storage}:/storage:ro
+      # l'unica cartella scrivibile: le tue note
+      - ${VAULT_PATH:-/mnt/storage/vault}:/vault
+      # indice e miniature
+      - ./data:/data
+      - ./config.yaml:/app/config.yaml:ro
+    ports:
+      - "127.0.0.1:8102:8102"
