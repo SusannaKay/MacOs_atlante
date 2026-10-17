@@ -4,7 +4,7 @@ An Obsidian-style app for everything that lives on your home server.
 
 I have a home server full of stuff: documents, ebooks, PDFs, old notes, photos scattered around folders. I wanted to browse all of it, write notes that link to any of those files, and see how everything connects. Obsidian is great, but it only knows about its own vault. Atlante treats the whole disk as the vault, without ever touching your files.
 
-<!-- screenshot: graph view + a note with links -->
+![The links graph: notes, PDFs, images and videos from the server, connected](docs/graph.png)
 
 ---
 
@@ -68,6 +68,8 @@ The wiki follows Andrej Karpathy's "LLM Wiki" idea: instead of a database-backed
 - `index.md` and `log.md` are written by the engine, not by the LLM (an 8B model is great at summarizing, less great at keeping a long index consistent)
 - generated pages have `generato: atlante` in their frontmatter. Add `bloccata: true` and the page becomes yours: Atlante won't touch it again
 - the wiki is never analysed as a source, so the LLM doesn't end up quoting itself
+
+![A wiki page written by qwen3:8b, with its properties and local graph](docs/wiki-page.png)
 
 ---
 
