@@ -6,6 +6,7 @@ import {
 import { NoteView, FileView, FolderView } from "./views.js";
 import { Explorer, SearchPanel, TagsPanel, BookmarksPanel, SuggestionsPanel, InfoPanel, kindDot } from "./panels.js";
 import { GraphView } from "./graph.js";
+import { AgendaView, newEventDialog } from "./agenda.js";
 import { h, icon, toast, modal, displayName, linkFor } from "./util.js";
 
 const WS_KEY = "atlante-workspace";
@@ -37,6 +38,7 @@ class App {
       suggestionsChanged: () => app.suggestionsPanel?.refresh(),
       suggestionsCount: (n) => app.setSuggestionBadge(n),
       activeId: () => app.active?.id,
+      noteChanged: (id) => app.reloadNote(id),
     };
   }
 
@@ -98,6 +100,7 @@ class App {
         h("span", { class: "rib-sep" }),
         h("button", { class: "rib-btn", title: "Grafo (⌘G)", "aria-label": "Apri il grafo", onclick: () => this.openGraph("global") }, icon("graph", 20)),
         h("button", { class: "rib-btn", title: "Grafo per anni", "aria-label": "Apri il grafo per anni", onclick: () => this.openGraph("global", null, "years") }, icon("years", 20)),
+        h("button", { class: "rib-btn", title: "Agenda", "aria-label": "Apri l'agenda", onclick: () => this.openAgenda() }, icon("calendar", 20)),
         h("button", { class: "rib-btn", title: "Nuova nota (⌘N)", "aria-label": "Nuova nota", onclick: () => this.newNote() }, icon("note", 20))),
       h("div", { class: "rib-bottom" },
         h("button", { class: "rib-btn", title: "Impostazioni", "aria-label": "Impostazioni", onclick: () => this.openSettings() }, icon("settings", 20))));
@@ -164,7 +167,7 @@ class App {
         if (it.is_dir) type = "folder";
       } catch (e) { toast(e.message, "error"); return; }
     }
-    const reuse = !newTab && this.active && this.active.type !== "graph" ? this.active : null;
+    const reuse = !newTab && this.active && !["graph", "agenda"].includes(this.active.type) ? this.active : null;
     const tab = reuse || this.createTab();
     if (reuse) { await reuse.view.beforeClose?.(); reuse.view.destroy(); }
     tab.id = id;
@@ -194,6 +197,8 @@ class App {
 
   activate(tab) {
     this.active = tab;
+    // nell'agenda il pannello informazioni non serve: lo nascondo senza toccare la tua preferenza
+    document.body.classList.toggle("agenda-active", tab.type === "agenda");
     this.tabs.forEach((t) => {
       t.host.hidden = t !== tab;
       t.el.classList.toggle("active", t === tab);
@@ -203,14 +208,15 @@ class App {
     tab.view?.activate?.();
     tab.view?.graph?.resize?.();
     this.explorer?.highlight(tab.id);
-    this.info?.update(tab.type === "graph" ? null : tab.view);
+    this.info?.update(["graph", "agenda"].includes(tab.type) ? null : tab.view);
     this.updateWordCount();
     this.saveWorkspace();
   }
 
   refreshTabLabel(tab) {
-    const title = tab.type === "graph" ? tab.view.title : tab.view?.title || "…";
-    tab.label.replaceChildren(...(tab.type === "graph" ? [icon("graph", 13)] : []), title);
+    const title = tab.view?.title || "…";
+    const ic = { graph: "graph", agenda: "calendar" }[tab.type];
+    tab.label.replaceChildren(...(ic ? [icon(ic, 13)] : []), title);
     tab.el.title = tab.id ? (tab.id.startsWith("n:") ? "Note/" : "Server/") + tab.id.slice(2) : title;
     if (tab === this.active) document.title = `${title} — Atlante`;
   }
@@ -232,7 +238,7 @@ class App {
     if (this.active === tab) {
       const next = this.tabs[Math.min(i, this.tabs.length - 1)];
       if (next) this.activate(next);
-      else { this.active = null; this.info?.update(null); this.showEmpty(); }
+      else { this.active = null; document.body.classList.remove("agenda-active"); this.info?.update(null); this.showEmpty(); }
     }
     this.saveWorkspace();
   }
@@ -247,6 +253,7 @@ class App {
         h("li", {}, h("button", { class: "link-btn", onclick: () => this.newNote() }, "Crea una nota"), key("⌘N")),
         h("li", {}, h("button", { class: "link-btn", onclick: () => this.openGraph("global") }, "Guarda il grafo"), key("⌘G")),
         h("li", {}, h("button", { class: "link-btn", onclick: () => this.openGraph("global", null, "years") }, "Sfoglia per anni")),
+        h("li", {}, h("button", { class: "link-btn", onclick: () => this.openAgenda() }, "Apri l'agenda")),
         h("li", {}, h("button", { class: "link-btn", onclick: () => this.palette() }, "Tutti i comandi"), key("⌘P")))));
   }
 
@@ -278,6 +285,32 @@ class App {
     this.activate(tab);
   }
 
+  openAgenda() {
+    let tab = this.tabs.find((t) => t.id === "agenda");
+    if (tab) { this.activate(tab); return; }
+    tab = this.createTab();
+    tab.id = "agenda";
+    tab.type = "agenda";
+    tab.view = new AgendaView(tab.host, this.ctx);
+    this.activate(tab);
+  }
+
+  async newEvent() {
+    const id = await newEventDialog();
+    if (!id) return;
+    this.explorer.refresh();
+    this.tabs.find((t) => t.type === "agenda")?.view.load();
+    this.open(id, { newTab: true });
+  }
+
+  /** Una nota è stata cambiata da fuori (es. una todo spuntata dall'agenda): ricarico le schede aperte. */
+  reloadNote(id) {
+    for (const t of this.tabs) {
+      if (t.id !== id || !(t.view instanceof NoteView)) continue;
+      if (!t.view.dirty) t.view.load(); // se la stai modificando, al salvataggio compare l'avviso di conflitto
+    }
+  }
+
   saveWorkspace() {
     const ws = {
       tabs: this.tabs.map((t) => ({ id: t.id, type: t.type, mode: t.view?.graph?.mode })),
@@ -292,6 +325,7 @@ class App {
     if (!ws?.tabs?.length) { this.showEmpty(); return; }
     for (const t of ws.tabs) {
       if (!t.id) continue;
+      if (t.type === "agenda") { this.openAgenda(); continue; }
       if (t.type === "graph") {
         if (t.id === "graph:global") this.openGraph("global", null, t.mode || "links");
         else this.openGraph("local", t.id.slice("graph:local:".length));
@@ -424,6 +458,8 @@ class App {
       { label: "Cerca nel server", key: "⇧⌘F", run: () => this.showPanel("search", true) },
       { label: "Apri il grafo", key: "⌘G", run: () => this.openGraph("global") },
       { label: "Apri il grafo per anni", run: () => this.openGraph("global", null, "years") },
+      { label: "Apri l'agenda", run: () => this.openAgenda() },
+      { label: "Nuovo evento", run: () => this.newEvent() },
       item && !item.is_dir ? { label: "Apri il grafo locale di questo elemento", run: () => this.openGraph("local", id) } : null,
       v instanceof NoteView ? { label: "Passa tra modifica e lettura", key: "⌘E", run: () => v.toggleMode() } : null,
       item ? { label: item.bookmarked ? "Togli dai segnalibri" : "Aggiungi ai segnalibri", run: () => this.toggleBookmark(id) } : null,

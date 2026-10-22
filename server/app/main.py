@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import subprocess
+import threading
 import time
 from contextlib import asynccontextmanager
 
@@ -13,14 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import ai, db, notes, wiki
+from . import agenda, ai, db, notes, wiki
 from .config import CFG, DATA_DIR, TOKEN, VAULT_ROOT
 from .indexer import Indexer, abs_path, item_id, kind_for, parent_of, recompute_year, split_name
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("atlante")
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 
 @asynccontextmanager
@@ -33,6 +34,19 @@ app = FastAPI(title="Atlante", version=VERSION, lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(ai.router)
 app.include_router(wiki.router)
+app.include_router(agenda.router)
+
+
+@app.exception_handler(Exception)
+async def unexpected(request: Request, exc: Exception):
+    log.exception("errore su %s %s", request.method, request.url.path)
+    detail = "%s: %s" % (type(exc).__name__, exc)
+    if isinstance(exc, PermissionError):
+        detail = "Permesso negato scrivendo nel vault (%s). Controlla proprietario e permessi della cartella." % \
+                 (getattr(exc, "filename", "") or exc)
+    elif isinstance(exc, OSError) and exc.errno in (5, 19, 30, 107):  # I/O, no device, read-only fs, non connesso
+        detail = "Il disco non risponde (%s): forse il box USB si è scollegato." % exc
+    return JSONResponse({"detail": detail}, status_code=500)
 
 INDEXER: Indexer | None = None
 THUMB_DIR = os.path.join(DATA_DIR, "thumbs")
@@ -47,6 +61,9 @@ def startup():
     os.makedirs(VAULT_ROOT, exist_ok=True)
     INDEXER = Indexer()
     INDEXER.start()
+    agenda.HOOKS.update(register=register_vault_file, index_note=INDEXER.index_note,
+                        resolve_links=INDEXER.resolve_links, write=write_vault)
+    threading.Thread(target=agenda.reindex_tasks_once, args=(INDEXER.index_note,), daemon=True).start()
     wiki.HOOKS.update(register=register_vault_file, index_note=INDEXER.index_note,
                       resolve_links=INDEXER.resolve_links, link_name=link_name_for)
 
@@ -314,6 +331,11 @@ def vault_id_check(iid):
         raise HTTPException(400, "si possono modificare solo le note del vault: i file del server sono in sola lettura")
 
 
+def write_vault(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    write_atomic(path, text)
+
+
 def write_atomic(path, text):
     tmp = path + ".atlante-tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -468,7 +490,7 @@ def note_rename(body: Rename, con=Depends(get_con)):
             stem, ext = (name.lower(), "") if mid == body.id and old["is_dir"] else split_name(name)
             con.execute("UPDATE items SET id=?, rel=?, name=?, stem=?, parent=? WHERE id=?",
                         (nid, nrel, name, stem, parent_of("n", nrel), mid))
-            for t in ("tags", "props", "bookmarks"):
+            for t in ("tags", "props", "bookmarks", "tasks"):
                 con.execute("UPDATE %s SET id=? WHERE id=?" % t, (nid, mid))
             con.execute("UPDATE links SET src=? WHERE src=?", (nid, mid))
             con.execute("UPDATE links SET target_id=? WHERE target_id=?", (nid, mid))
@@ -515,6 +537,7 @@ def note_delete(body: IdOnly, con=Depends(get_con)):
             con.execute("DELETE FROM links WHERE src=?", (i,))
             con.execute("DELETE FROM tags WHERE id=? AND origin='note'", (i,))
             con.execute("DELETE FROM props WHERE id=? AND origin='note'", (i,))
+            con.execute("DELETE FROM tasks WHERE id=?", (i,))
             for t in ("ai_profiles", "ai_entities", "ai_match"):
                 con.execute("DELETE FROM %s WHERE id=?" % t, (i,))
             con.execute("DELETE FROM suggestions WHERE a=? OR b=?", (i, i))

@@ -57,8 +57,11 @@ export async function api(path, { method = "GET", params, body, override } = {})
     throw new ApiError(0, "Il server non risponde. Controlla che il Mac sia collegato a Tailscale.");
   }
   if (!res.ok) {
-    let msg = res.statusText;
-    try { msg = (await res.json()).detail || msg; } catch { /* niente */ }
+    let msg = `Errore ${res.status} ${res.statusText}`.trim();
+    try {
+      const raw = await res.text();
+      try { msg = JSON.parse(raw).detail || msg; } catch { if (raw.trim()) msg = `Errore ${res.status}: ${raw.trim().slice(0, 300)}`; }
+    } catch { /* niente */ }
     if (res.status === 401) msg = "Token non valido: aprilo dalle impostazioni e controllalo.";
     throw new ApiError(res.status, msg);
   }

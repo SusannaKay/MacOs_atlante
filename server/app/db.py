@@ -96,6 +96,14 @@ CREATE TABLE IF NOT EXISTS wiki_sources (
     entity TEXT NOT NULL, id TEXT NOT NULL, added REAL, PRIMARY KEY (entity, id)
 );
 CREATE INDEX IF NOT EXISTS wiki_sources_id ON wiki_sources(id);
+
+-- todo delle note: "- [ ] cosa 📅 2026-10-25" (line = riga nel file, da 0)
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT NOT NULL, line INTEGER NOT NULL, text TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0, due TEXT,
+    PRIMARY KEY (id, line)
+);
+CREATE INDEX IF NOT EXISTS tasks_due ON tasks(due);
 """
 
 

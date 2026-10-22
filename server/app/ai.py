@@ -33,12 +33,13 @@ GENERATED_FILES = ("index.md", "log.md", "SCHEMA.md")
 
 def generated_sql(col: str) -> str:
     """Condizione SQL vera se l'id in `col` è un file generato (wiki/, index.md, log.md…)."""
-    return ("(substr({c},1,7)='n:wiki/' OR substr({c},1,12)='n:_proposte/' OR {c} IN ({f}))"
+    return ("(substr({c},1,7)='n:wiki/' OR substr({c},1,12)='n:_proposte/' OR substr({c},1,11)='n:_modelli/' "
+            "OR {c} IN ({f}))"
             .format(c=col, f=",".join("'n:%s'" % f for f in GENERATED_FILES)))
 
 
 def is_generated(iid: str) -> bool:
-    return iid.startswith(("n:wiki/", "n:_proposte/")) or iid[2:] in GENERATED_FILES
+    return iid.startswith(("n:wiki/", "n:_proposte/", "n:_modelli/")) or iid[2:] in GENERATED_FILES
 
 
 def get_con():

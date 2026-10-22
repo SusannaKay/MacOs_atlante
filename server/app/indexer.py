@@ -285,6 +285,7 @@ class Indexer:
                     con.execute("DELETE FROM links WHERE src IN (%s)" % q, chunk)
                     con.execute("DELETE FROM tags WHERE origin='note' AND id IN (%s)" % q, chunk)
                     con.execute("DELETE FROM props WHERE origin='note' AND id IN (%s)" % q, chunk)
+                    con.execute("DELETE FROM tasks WHERE id IN (%s)" % q, chunk)
                     for t in ("ai_profiles", "ai_entities", "ai_match"):
                         con.execute("DELETE FROM %s WHERE id IN (%s)" % (t, q), chunk)
                     con.execute("DELETE FROM suggestions WHERE status='pending' AND (a IN (%s) OR b IN (%s))"
@@ -337,6 +338,9 @@ class Indexer:
             con.execute("DELETE FROM links WHERE src=?", (nid,))
             con.execute("DELETE FROM tags WHERE id=? AND origin='note'", (nid,))
             con.execute("DELETE FROM props WHERE id=? AND origin='note'", (nid,))
+            con.execute("DELETE FROM tasks WHERE id=?", (nid,))
+            con.executemany("INSERT OR REPLACE INTO tasks(id,line,text,done,due) VALUES(?,?,?,?,?)",
+                            [(nid, ln, t, int(d), due) for ln, d, t, due in info["tasks"]])
             con.executemany("INSERT INTO links(src,target_raw,kind) VALUES(?,?,?)",
                             [(nid, t, k) for t, k in info["links"]])
             con.executemany("INSERT OR IGNORE INTO tags(id,tag,origin) VALUES(?,?,'note')",

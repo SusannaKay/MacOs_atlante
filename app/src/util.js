@@ -39,6 +39,7 @@ const ICONS = {
   note: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
   spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
   check: '<path d="m5 12 5 5 9-10"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
 };
 
 export function icon(name, size = 18) {
@@ -138,9 +139,21 @@ export function toast(msg, kind = "info", ms = 3500) {
     box = h("div", { class: "toasts", role: "status", "aria-live": "polite" });
     document.body.append(box);
   }
-  const t = h("div", { class: "toast " + kind }, msg);
+  const text = String(msg || "Errore sconosciuto");
+  if (kind !== "error") {
+    const t = h("div", { class: "toast " + kind }, text);
+    box.append(t);
+    setTimeout(() => t.remove(), ms);
+    return;
+  }
+  // gli errori restano finché non li chiudi, e il testo si può selezionare e copiare
+  const t = h("div", { class: "toast error", role: "alert" },
+    h("div", { class: "toast-msg" }, text),
+    h("div", { class: "toast-actions" },
+      h("button", { onclick: () => { navigator.clipboard.writeText(text); toast("Errore copiato."); } }, "Copia"),
+      h("button", { onclick: () => t.remove() }, "Chiudi")));
   box.append(t);
-  setTimeout(() => t.remove(), ms);
+  console.error("[Atlante]", text);
 }
 
 // ------------------------------------------------------------- menu contestuale

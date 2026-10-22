@@ -42,6 +42,19 @@ Atlante has two parts:
   - **Years** (*Anni*): one column per year, one lane per file type, click a year to pull in its files
 - Local graph in the side panel, command palette (⌘P), quick open (⌘O), bookmarks, previews
 
+### Agenda: events and to-dos
+
+Events are plain notes with `tipo: evento` and a `data:` in the frontmatter. To-dos are ordinary Markdown checkboxes in any note, with an optional due date in the [Obsidian Tasks](https://publish.obsidian.md/tasks/) style:
+
+```markdown
+- [ ] Book the room 📅 2026-10-17
+- [x] Order pizza
+```
+
+- **New event** (⌘P or the button in the Agenda) creates `eventi/<date> <name>.md` from a template in `_modelli/evento.md`. Due dates in the template can be relative to the event (`📅 -7` = a week before) and become real dates when the event is created. The template is a normal note: edit it and the next events will use it.
+- **Agenda** (calendar icon) shows the month with your events, their progress (`3/15` to-dos done) and how many to-dos are due each day. On the side, a *To do* list grouped into overdue, today, next 7 days and later.
+- Ticking a to-do in the Agenda writes `[x]` into the note. To-dos in an event note without a date count as due on the event day.
+
 ### Where a file's year comes from
 
 The Years graph needs to know when each file is from. Atlante tries, in order:
@@ -162,6 +175,7 @@ atlante/
 │   │   ├── notes.py         vault: links, tags, frontmatter
 │   │   ├── ai.py            queue and storage for the AI analysis
 │   │   ├── wiki.py          compiled wiki pages, index.md, log.md
+│   │   ├── agenda.py        events, to-dos, event template
 │   │   └── config.py
 │   ├── config.yaml          folders to skip, scan interval
 │   ├── docker-compose.yml
@@ -170,7 +184,7 @@ atlante/
     ├── main.js              Electron main process, settings, Keychain
     ├── ai-worker.js         talks to Ollama, runs profile/match/compile
     ├── preload.js
-    └── src/                 interface: editor (CodeMirror), graph (d3-force), panels
+    └── src/                 interface: editor (CodeMirror), graph (d3-force), agenda, panels
 ```
 
 ---

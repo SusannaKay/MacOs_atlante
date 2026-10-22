@@ -13,6 +13,51 @@ YEAR_KEYS = ("anno", "year")
 DATE_KEYS = ("data", "date", "created", "creato", "creata")
 
 
+TASK_RE = re.compile(r"^(\s*[-*+]\s+\[)( |x|X)(\]\s+)(.*)$")
+DUE_RE = re.compile(r"\s*📅\s*(\d{4}-\d{2}-\d{2})")
+FENCE_LINE_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def parse_tasks(text: str):
+    """Righe '- [ ] cosa 📅 2026-10-25' della nota: (riga, fatta, testo, scadenza). La riga conta da 0
+    sull'intero file (frontmatter compreso), così si può spuntare la casella giusta."""
+    out = []
+    fence = False
+    in_fm = text.startswith("---")
+    for n, line in enumerate(text.split("\n")):
+        if in_fm:
+            if n > 0 and line.strip() == "---":
+                in_fm = False
+            continue
+        if FENCE_LINE_RE.match(line):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        m = TASK_RE.match(line)
+        if not m:
+            continue
+        body = m.group(4)
+        d = DUE_RE.search(body)
+        due = d.group(1) if d else None
+        label = DUE_RE.sub("", body).strip()
+        if label:
+            out.append((n, m.group(2).lower() == "x", label[:500], due))
+    return out
+
+
+def toggle_task(text: str, line: int, done: bool):
+    """Spunta (o toglie la spunta) alla casella sulla riga indicata. None se la riga non è una todo."""
+    lines = text.split("\n")
+    if not 0 <= line < len(lines):
+        return None
+    m = TASK_RE.match(lines[line])
+    if not m:
+        return None
+    lines[line] = m.group(1) + ("x" if done else " ") + m.group(3) + m.group(4)
+    return "\n".join(lines)
+
+
 def split_frontmatter(text: str):
     m = FM_RE.match(text)
     if not m:
@@ -88,7 +133,8 @@ def parse(text: str):
                 if year:
                     break
 
-    return {"tags": sorted(tags), "links": links, "props": props, "year": year, "body": body}
+    return {"tags": sorted(tags), "links": links, "props": props, "year": year, "body": body,
+            "tasks": parse_tasks(text)}
 
 
 def rewrite_links(text: str, old_targets, new_target: str) -> str:
