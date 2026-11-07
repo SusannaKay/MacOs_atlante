@@ -4,6 +4,7 @@
 - /api/tasks                todo aperte da mostrare nella lista «Da fare»
 - /api/task/toggle          spunta una todo, scrivendo nella nota
 - /api/event/create         nuova nota evento dal modello vault/_modelli/evento.md
+- /api/task/add             todo veloce, senza evento, in vault/Da fare.md
 """
 import datetime as dt
 import os
@@ -23,6 +24,8 @@ HOOKS = {}
 
 EVENT_DIR = "eventi"
 TEMPLATE_REL = "_modelli/evento.md"
+INBOX_REL = "Da fare.md"
+INBOX_HEAD = "# Da fare\n\nTodo veloci, senza evento. Le aggiunge l'Agenda; puoi scriverle anche a mano.\n\n"
 SKIP_PREFIXES = ("n:_modelli/", "n:.trash/", "n:wiki/")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 REL_DUE_RE = re.compile(r"📅\s*([+-]?\d{1,3})(?![\d-])")
@@ -243,6 +246,50 @@ def event_create(body: EventIn, con=Depends(get_con)):
     HOOKS["index_note"](iid, text)
     HOOKS["resolve_links"]()
     return {"id": iid}
+
+
+class TaskIn(BaseModel):
+    text: str
+    due: str = ""
+
+
+def append_task(text, line):
+    """Aggiunge la riga in fondo a Da fare.md (creandolo se serve) e restituisce il testo nuovo."""
+    if not text.strip():
+        text = INBOX_HEAD
+    if not text.endswith("\n"):
+        text += "\n"
+    return text + line + "\n"
+
+
+def task_line(body: TaskIn):
+    t = re.sub(r"\s+", " ", body.text).strip()
+    if not t:
+        raise HTTPException(400, "scrivi cosa c'è da fare")
+    t = notes.DUE_RE.sub("", t).strip()
+    due = ""
+    if body.due:
+        d = parse_date(body.due)
+        if not d:
+            raise HTTPException(400, "data non valida")
+        due = " 📅 " + d.isoformat()
+    return "- [ ] " + t[:400] + due
+
+
+@router.post("/api/task/add")
+def task_add(body: TaskIn, con=Depends(get_con)):
+    line = task_line(body)
+    p = os.path.join(VAULT_ROOT, INBOX_REL)
+    try:
+        with open(p, encoding="utf-8") as f:
+            text = f.read()
+    except FileNotFoundError:
+        text = ""
+    new = append_task(text, line)
+    HOOKS["write"](p, new)
+    iid, _ = HOOKS["register"](con, INBOX_REL)
+    HOOKS["index_note"](iid, new)
+    return {"id": iid, "mtime": os.stat(p).st_mtime}
 
 
 def reindex_tasks_once(index_note):

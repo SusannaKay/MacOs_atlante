@@ -54,6 +54,7 @@ Events are plain notes with `tipo: evento` and a `data:` in the frontmatter. To-
 - **New event** (⌘P or the button in the Agenda) creates `eventi/<date> <name>.md` from a template in `_modelli/evento.md`. Due dates in the template can be relative to the event (`📅 -7` = a week before) and become real dates when the event is created. The template is a normal note: edit it and the next events will use it.
 - **Agenda** (calendar icon) shows the month with your events, their progress (`3/15` to-dos done) and how many to-dos are due each day. On the side, a *To do* list grouped into overdue, today, next 7 days and later.
 - Ticking a to-do in the Agenda writes `[x]` into the note. To-dos in an event note without a date count as due on the event day.
+- **Quick to-dos** without an event (the *Todo* button, double click on a day, or ⌘P → *Nuova todo*) go to `Da fare.md` in the vault, each with its own date.
 
 ### Where a file's year comes from
 

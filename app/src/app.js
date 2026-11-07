@@ -6,7 +6,7 @@ import {
 import { NoteView, FileView, FolderView } from "./views.js";
 import { Explorer, SearchPanel, TagsPanel, BookmarksPanel, SuggestionsPanel, InfoPanel, kindDot } from "./panels.js";
 import { GraphView } from "./graph.js";
-import { AgendaView, newEventDialog } from "./agenda.js";
+import { AgendaView, newEventDialog, newTaskDialog } from "./agenda.js";
 import { h, icon, toast, modal, displayName, linkFor } from "./util.js";
 
 const WS_KEY = "atlante-workspace";
@@ -469,6 +469,13 @@ class App {
       { label: "Apri il grafo per anni", run: () => this.openGraph("global", null, "years") },
       { label: "Apri l'agenda", run: () => this.openAgenda() },
       { label: "Nuovo evento", run: () => this.newEvent() },
+      { label: "Nuova todo (senza evento)", run: async () => {
+        const r = await newTaskDialog();
+        if (!r) return;
+        toast("Todo aggiunta in «Da fare».");
+        this.reloadNote(r.id);
+        this.tabs.find((t) => t.type === "agenda")?.view.load();
+      } },
       item && !item.is_dir ? { label: "Apri il grafo locale di questo elemento", run: () => this.openGraph("local", id) } : null,
       v instanceof NoteView ? { label: "Passa tra modifica e lettura", key: "⌘E", run: () => v.toggleMode() } : null,
       item ? { label: item.bookmarked ? "Togli dai segnalibri" : "Aggiungi ai segnalibri", run: () => this.toggleBookmark(id) } : null,

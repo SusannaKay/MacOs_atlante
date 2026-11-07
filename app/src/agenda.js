@@ -50,6 +50,37 @@ export function newEventDialog(date = iso(new Date())) {
   });
 }
 
+/** Finestra per una todo veloce (senza evento): finisce in Note/Da fare.md con la sua data. */
+export function newTaskDialog(date = iso(new Date())) {
+  return new Promise((resolve) => {
+    const text = h("input", { type: "text", placeholder: "Es. Chiamare il fornitore", "aria-label": "Cosa c'è da fare", required: true });
+    const day = h("input", { type: "date", value: date, "aria-label": "Giorno" });
+    const err = h("p", { class: "form-err", hidden: true });
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; m.close(); resolve(v); } };
+    const form = h("form", {
+      class: "prompt event-form",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        if (!text.value.trim()) return;
+        try {
+          finish(await api("/task/add", { method: "POST", body: { text: text.value.trim(), due: day.value } }));
+        } catch (ex) { err.hidden = false; err.textContent = ex.message; }
+      },
+    },
+    h("h2", {}, "Nuova todo"),
+    h("label", {}, h("span", {}, "Cosa c'è da fare"), text),
+    h("label", {}, h("span", {}, "Giorno"), day),
+    h("p", { class: "muted small" }, "Le todo senza evento finiscono in Note/Da fare.md, ognuna con la sua data."),
+    err,
+    h("div", { class: "row end" },
+      h("button", { type: "button", class: "btn ghost", onclick: () => finish(null) }, "Annulla"),
+      h("button", { type: "submit", class: "btn primary" }, "Aggiungi")));
+    const m = modal(form, { onClose: () => { if (!done) { done = true; resolve(null); } } });
+    text.focus();
+  });
+}
+
 export class AgendaView {
   constructor(container, ctx) {
     this.ctx = ctx;
@@ -81,6 +112,7 @@ export class AgendaView {
         this.monthLabel,
         h("div", { class: "spacer" }),
         h("label", { class: "check small" }, doneToggle, "Mostra le todo fatte"),
+        h("button", { class: "btn small", onclick: () => this.newTask() }, icon("plus", 14), "Todo"),
         h("button", { class: "btn small primary", onclick: () => this.newEvent() }, icon("plus", 14), "Nuovo evento")),
       h("div", { class: "ag-body" },
         h("section", { class: "ag-cal", "aria-label": "Calendario" },
@@ -125,6 +157,7 @@ export class AgendaView {
     for (const e of events) (byDay[e.date] ||= { events: [], tasks: [] }).events.push(e);
     for (const t of tasks) if (this.showDone || !t.done) (byDay[t.due] ||= { events: [], tasks: [] }).tasks.push(t);
     const todayIso = iso(new Date());
+    this.byDay = byDay;
     const cells = [];
     for (let d = start; d <= end; d = addDays(d, 1)) {
       const key = iso(d);
@@ -136,8 +169,8 @@ export class AgendaView {
       const extra = evs.length - MAX_IN_DAY;
       cells.push(h("div", {
         class: "ag-day" + (out ? " out" : "") + (key === todayIso ? " today" : ""), role: "gridcell",
-        title: "Doppio clic per creare un evento in questo giorno",
-        ondblclick: () => this.newEvent(key),
+        title: "Doppio clic per aggiungere una todo o un evento in questo giorno",
+        ondblclick: () => this.dayPopup(key, day),
       },
       h("span", { class: "ag-num" }, d.getDate()),
       h("div", { class: "ag-items" },
@@ -167,14 +200,45 @@ export class AgendaView {
 
   dayPopup(key, day) {
     const d = fromIso(key);
+    const input = h("input", { type: "text", placeholder: "Aggiungi una todo per questo giorno…", "aria-label": "Nuova todo per questo giorno" });
+    const add = h("form", {
+      class: "ag-add",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text) return;
+        input.disabled = true;
+        try {
+          const r = await api("/task/add", { method: "POST", body: { text, due: key } });
+          this.ctx.noteChanged?.(r.id);
+          this.ctx.treeChanged?.();
+          await this.load();
+          m.close();
+          this.dayPopup(key, this.byDay?.[key] || { events: [], tasks: [] }); // riapro con la todo nuova
+        } catch (ex) {
+          input.disabled = false;
+          toast(ex.message, "error");
+        }
+      },
+    }, input, h("button", { type: "submit", class: "btn small primary" }, "Aggiungi"));
     const m = modal(h("div", { class: "prompt ag-daypop" },
       h("h2", {}, `${GIORNI[(d.getDay() + 6) % 7]} ${d.getDate()} ${MESI[d.getMonth()]}`),
       day.events.map((e) => this.eventChip(e, () => m.close())),
       day.tasks.length ? h("ul", { class: "ag-list" }, day.tasks.map((t) => this.taskRow(t, { date: false, after: () => m.close() }))) : null,
+      add,
       h("div", { class: "row end" },
         h("button", { class: "btn ghost", onclick: () => { m.close(); this.newEvent(key); } }, icon("plus", 14), "Evento in questo giorno"),
         h("button", { class: "btn", onclick: () => m.close() }, "Chiudi"))));
-    m.box.querySelector(".row.end .btn:last-child")?.focus(); // così Esc chiude subito
+    input.focus(); // così puoi scrivere subito, ed Esc chiude
+  }
+
+  async newTask(date) {
+    const r = await newTaskDialog(date || iso(new Date()));
+    if (!r) return;
+    toast("Todo aggiunta in «Da fare».");
+    this.ctx.noteChanged?.(r.id);
+    this.ctx.treeChanged?.();
+    this.load();
   }
 
   drawTodo({ items, today }) {

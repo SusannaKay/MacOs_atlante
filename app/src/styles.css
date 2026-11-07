@@ -695,3 +695,6 @@ button.link:hover { background: var(--bg-hover); }
   .ag-body { grid-template-columns: minmax(0, 1fr); }
   .ag-side { display: none; }
 }
+
+.ag-add { display: flex; gap: 6px; margin-top: 10px; }
+.ag-add input { flex: 1; }
