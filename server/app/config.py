@@ -28,6 +28,8 @@ DEFAULTS = {
     "vault_rescan_seconds": 30,
     "text_max_mb": 50,
     "text_max_chars": 300_000,
+    # i collegamenti suggeriti dall'LLM con fiducia da qui in su diventano link senza chiedere (0 = mai)
+    "auto_accept": 0.8,
 }
 
 

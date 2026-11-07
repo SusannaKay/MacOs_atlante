@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from . import db
+from .config import CFG
 
 router = APIRouter()
 
@@ -25,6 +26,10 @@ SKIP_KINDS = ("dir", "other", "archive")
 NAME_ONLY_EXT = ("srt", "vtt", "sub", "ass")
 EXCERPT_CHARS = 3500
 MIN_CONFIDENCE = 0.6
+try:
+    AUTO_ACCEPT = float(CFG.get("auto_accept") or 0)
+except (TypeError, ValueError):
+    AUTO_ACCEPT = 0.0
 COMMON_ENTITY = 250  # un'entità presente in troppi file non serve a trovare collegamenti
 
 # file del vault scritti dal motore stesso (wiki, indice, log): non vanno analizzati come fonti
@@ -73,7 +78,7 @@ def stats(con=Depends(get_con)):
     matched = q("SELECT count(*) FROM ai_match m JOIN items i ON i.id=m.id")
     by = {r["status"]: r["n"] for r in con.execute("SELECT status, count(*) n FROM suggestions GROUP BY status")}
     wiki = q("SELECT count(*) FROM wiki_pages WHERE locked=0 AND title<>''")
-    return {"total": total, "profiled": profiled, "matched": matched, "wiki": wiki,
+    return {"total": total, "profiled": profiled, "matched": matched, "wiki": wiki, "auto_accept": AUTO_ACCEPT,
             "pending": by.get("pending", 0), "accepted": by.get("accepted", 0), "rejected": by.get("rejected", 0)}
 
 
@@ -231,14 +236,30 @@ def save_matches(body: Match, con=Depends(get_con)):
             if not con.execute("SELECT 1 FROM items WHERE id=?", (l.target,)).fetchone():
                 continue
             a, b = pair(body.id, l.target)
-            cur = con.execute("INSERT OR IGNORE INTO suggestions(a, b, reason, confidence, model, status, created) "
-                              "VALUES(?,?,?,?,?,'pending',?)", (a, b, l.reason.strip()[:300], l.confidence, body.model, now))
+            auto = AUTO_ACCEPT > 0 and l.confidence >= AUTO_ACCEPT
+            cur = con.execute("INSERT OR IGNORE INTO suggestions(a, b, reason, confidence, model, status, created, decided) "
+                              "VALUES(?,?,?,?,?,?,?,?)", (a, b, l.reason.strip()[:300], l.confidence, body.model,
+                                                          "accepted" if auto else "pending", now, now if auto else None))
             added += cur.rowcount
         con.execute("INSERT OR REPLACE INTO ai_match(id, model, created) VALUES(?,?,?)", (body.id, body.model, now))
     return {"added": added}
 
 
 # ---------------------------------------------------------------- 3. revisione
+
+def accept_confident_pending():
+    """All'avvio: i suggerimenti in attesa sopra la soglia di auto_accept diventano link."""
+    if AUTO_ACCEPT <= 0:
+        return 0
+    con = db.connect()
+    try:
+        with db.writing(con):
+            cur = con.execute("UPDATE suggestions SET status='accepted', decided=? WHERE status='pending' AND confidence>=?",
+                              (time.time(), AUTO_ACCEPT))
+        return cur.rowcount
+    finally:
+        con.close()
+
 
 def suggestion_rows(con, where, args, limit=200, offset=0):
     rows = con.execute(

@@ -63,6 +63,9 @@ def startup():
     INDEXER.start()
     agenda.HOOKS.update(register=register_vault_file, index_note=INDEXER.index_note,
                         resolve_links=INDEXER.resolve_links, write=write_vault)
+    n = ai.accept_confident_pending()
+    if n:
+        log.info("accettati in automatico %d suggerimenti con fiducia >= %.0f%%", n, ai.AUTO_ACCEPT * 100)
     threading.Thread(target=agenda.reindex_tasks_once, args=(INDEXER.index_note,), daemon=True).start()
     wiki.HOOKS.update(register=register_vault_file, index_note=INDEXER.index_note,
                       resolve_links=INDEXER.resolve_links, link_name=link_name_for)

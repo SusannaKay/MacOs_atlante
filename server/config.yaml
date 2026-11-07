@@ -21,3 +21,6 @@ rescan_minutes: 30
 
 # testo estratto dai PDF fino a questa dimensione (MB)
 text_max_mb: 50
+
+# i collegamenti suggeriti dall'LLM con fiducia da qui in su diventano link da soli (0 = chiedi sempre)
+auto_accept: 0.8

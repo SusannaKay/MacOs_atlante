@@ -354,11 +354,11 @@ export class SuggestionsPanel {
     this.el = h("div", { class: "panel suggestions" });
     this.count = h("p", { class: "muted results-count" });
     this.list = h("div", { class: "results" });
-    this.bulk = h("button", { class: "btn ghost small", onclick: () => this.acceptConfident() }, icon("check", 14), "Accetta quelli sicuri (≥ 90%)");
+    this.bulk = h("button", { class: "btn ghost small", onclick: () => this.acceptConfident() }, icon("check", 14), "Accetta quelli dal 70% in su");
     this.el.append(
       h("div", { class: "panel-head" }, h("h2", {}, "Suggerimenti"),
         h("button", { class: "icon-btn", title: "Aggiorna", "aria-label": "Aggiorna i suggerimenti", onclick: () => this.refresh() }, icon("refresh"))),
-      h("p", { class: "panel-intro" }, "Collegamenti proposti dall'LLM sul tuo Mac. Accettali per farli diventare link veri."),
+      h("p", { class: "panel-intro" }, "Collegamenti proposti dall'LLM sul tuo Mac. Quelli con fiducia dall'80% in su diventano link da soli; qui restano quelli da decidere tu."),
       h("div", { class: "panel-tools" }, this.bulk),
       this.count, this.list);
     this.refresh();
@@ -412,11 +412,11 @@ export class SuggestionsPanel {
   }
 
   async acceptConfident() {
-    const ok = await confirmBox("Accettare i suggerimenti sicuri?",
-      "Tutti i suggerimenti con fiducia del 90% o più diventeranno collegamenti. Potrai sempre rimuoverli uno per uno.", "Accetta");
+    const ok = await confirmBox("Accettare i suggerimenti dal 70% in su?",
+      "Tutti i suggerimenti in attesa con fiducia del 70% o più diventeranno collegamenti. Potrai sempre rimuoverli uno per uno.", "Accetta");
     if (!ok) return;
     try {
-      const r = await api("/suggestions/decide_many", { method: "POST", body: { min_confidence: 0.9, accept: true } });
+      const r = await api("/suggestions/decide_many", { method: "POST", body: { min_confidence: 0.7, accept: true } });
       toast(r.changed === 1 ? "1 collegamento accettato." : `${r.changed} collegamenti accettati.`);
       this.refresh();
       this.ctx.reloadAll();
