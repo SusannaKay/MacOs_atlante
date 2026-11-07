@@ -262,6 +262,8 @@ body.agenda-active .tabbar-wrap > .icon-btn { visibility: hidden; }
 .st-conn.ok::before { background: var(--ok); }
 .st-conn.err { color: var(--danger); }
 .st-conn.err::before { background: var(--danger); }
+.st-conn.off { color: var(--accent); }
+.st-conn.off::before { background: var(--accent); }
 
 /* ------------------------------------------------------------------ albero */
 .tree { overflow: auto; flex: 1; padding: 2px 6px 24px; }

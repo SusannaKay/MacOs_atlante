@@ -21,7 +21,7 @@ from .indexer import Indexer, abs_path, item_id, kind_for, parent_of, recompute_
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("atlante")
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 
 @asynccontextmanager

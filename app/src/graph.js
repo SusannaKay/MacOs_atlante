@@ -2,7 +2,7 @@
 import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from "d3-force";
 import { zoom, zoomIdentity } from "d3-zoom";
 import { select } from "d3-selection";
-import { api } from "./api.js";
+import { api, isOffline } from "./api.js";
 import { h, kindColor, kindLabel, cssVar, displayName, toast } from "./util.js";
 
 const COLW = 150; // larghezza di un anno, in unità del grafo
@@ -115,6 +115,7 @@ export class GraphView {
       g.nodes.push(...extra.filter((n) => !ids.has(n.id)));
       this.setData(g);
     } catch (e) {
+      if (isOffline()) { this.setData({ nodes: [], edges: [] }); return; } // offline il grafo resta vuoto, senza avvisi
       toast(e.message, "error");
     }
   }

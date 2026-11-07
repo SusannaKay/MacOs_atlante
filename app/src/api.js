@@ -41,8 +41,38 @@ function qs(params) {
   return s ? "?" + s : "";
 }
 
+// ---------------------------------------------------------------- copia sul Mac (offline)
+// Quando il server non risponde, le richieste vanno alla copia del vault sul Mac (processo principale),
+// che si sincronizza da sola appena il server torna raggiungibile.
+const hasLocal = () => Boolean(bridge?.vaultRequest);
+let vault = { online: null, syncing: false, last: null, error: null, conflicts: [], root: "" };
+const vaultListeners = new Set();
+export const vaultState = () => vault;
+export const isOffline = () => hasLocal() && vault.online === false;
+export const onVaultStatus = (fn) => { vaultListeners.add(fn); return () => vaultListeners.delete(fn); };
+export const syncNow = () => (bridge?.vaultSyncNow ? bridge.vaultSyncNow() : Promise.resolve(null));
+export const revealVault = () => bridge?.vaultReveal?.();
+function setVault(st) {
+  const was = vault.online;
+  vault = { ...vault, ...st };
+  vaultListeners.forEach((fn) => fn(vault, was));
+}
+if (hasLocal()) {
+  bridge.vaultStatus().then(setVault).catch(() => {});
+  bridge.onVaultStatus(setVault);
+}
+
+async function local(path, method, params, body) {
+  const r = await bridge.vaultRequest(path, { method, params: params || {}, body: body || {} });
+  if (!r.ok) throw new ApiError(r.status, r.detail);
+  return r.data;
+}
+
+const WRITES = new Set(["POST", "PUT", "DELETE"]);
+
 export async function api(path, { method = "GET", params, body, override } = {}) {
   const c = override || cfg;
+  if (!override && isOffline()) return local(path, method, params, body);
   let res;
   try {
     res = await fetch(c.url + "/api" + path + qs(params), {
@@ -52,8 +82,17 @@ export async function api(path, { method = "GET", params, body, override } = {})
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(30_000),
     });
-  } catch {
+  } catch (e) {
+    if (e?.name === "TimeoutError") { // il server c'è ma è lento: non passo alla copia offline
+      throw new ApiError(0, "Il server non ha risposto in tempo. Riprova tra poco.");
+    }
+    if (!override && hasLocal() && c.url) {
+      bridge.vaultOffline();
+      setVault({ online: false });
+      return local(path, method, params, body);
+    }
     throw new ApiError(0, "Il server non risponde. Controlla che il Mac sia collegato a Tailscale.");
   }
   if (!res.ok) {
@@ -65,10 +104,18 @@ export async function api(path, { method = "GET", params, body, override } = {})
     if (res.status === 401) msg = "Token non valido: aprilo dalle impostazioni e controllalo.";
     throw new ApiError(res.status, msg);
   }
+  if (!override && WRITES.has(method) && hasLocal()) bridge.vaultSyncSoon(); // la copia sul Mac si aggiorna subito
   return res.json();
 }
 
-export const rawUrl = (id) => `${cfg.url}/api/raw${qs({ id, token: cfg.token })}`;
+/** Indirizzo di un file: dal server, oppure dalla copia sul Mac se sei offline e il file è del vault. */
+export const rawUrl = (id) => {
+  if (isOffline() && id.startsWith("n:") && vault.root) {
+    return "file://" + vault.root.split("/").map(encodeURIComponent).join("/") + "/" + id.slice(2).split("/").map(encodeURIComponent).join("/");
+  }
+  return `${cfg.url}/api/raw${qs({ id, token: cfg.token })}`;
+};
+
 export const thumbUrl = (id, size = 320) => `${cfg.url}/api/thumb${qs({ id, size, token: cfg.token })}`;
 
 export function download(id) {

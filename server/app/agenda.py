@@ -5,6 +5,7 @@
 - /api/task/toggle          spunta una todo, scrivendo nella nota
 - /api/event/create         nuova nota evento dal modello vault/_modelli/evento.md
 - /api/task/add             todo veloce, senza evento, in vault/Da fare.md
+- /api/sync/manifest        elenco dei file del vault, per la copia offline sul Mac
 """
 import datetime as dt
 import os
@@ -26,6 +27,7 @@ EVENT_DIR = "eventi"
 TEMPLATE_REL = "_modelli/evento.md"
 INBOX_REL = "Da fare.md"
 INBOX_HEAD = "# Da fare\n\nTodo veloci, senza evento. Le aggiunge l'Agenda; puoi scriverle anche a mano.\n\n"
+SYNC_SKIP = (".trash", ".atlante")
 SKIP_PREFIXES = ("n:_modelli/", "n:.trash/", "n:wiki/")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 REL_DUE_RE = re.compile(r"📅\s*([+-]?\d{1,3})(?![\d-])")
@@ -290,6 +292,26 @@ def task_add(body: TaskIn, con=Depends(get_con)):
     iid, _ = HOOKS["register"](con, INBOX_REL)
     HOOKS["index_note"](iid, new)
     return {"id": iid, "mtime": os.stat(p).st_mtime}
+
+
+@router.get("/api/sync/manifest")
+def manifest():
+    """Tutti i file del vault con data di modifica e dimensione (per la copia offline sul Mac)."""
+    out = []
+    for root, dirs, files in os.walk(VAULT_ROOT):
+        rel_root = os.path.relpath(root, VAULT_ROOT)
+        rel_root = "" if rel_root == "." else rel_root.replace(os.sep, "/")
+        dirs[:] = [d for d in dirs if not (rel_root == "" and d in SYNC_SKIP) and not d.startswith(".")]
+        for f in files:
+            if f.startswith(".") or f.endswith(".atlante-tmp"):
+                continue
+            rel = (rel_root + "/" if rel_root else "") + f
+            try:
+                st = os.stat(os.path.join(root, f))
+            except OSError:
+                continue
+            out.append({"rel": rel, "mtime": st.st_mtime, "size": st.st_size})
+    return {"files": out}
 
 
 def reindex_tasks_once(index_note):

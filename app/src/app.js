@@ -2,6 +2,7 @@
 import {
   api, loadConfig, saveConfig, config, isConfigured, hasBridge, isMacApp, onCommand,
   aiAvailable, aiStatus, aiModels, onAiStatus,
+  isOffline, onVaultStatus, vaultState, syncNow, revealVault,
 } from "./api.js";
 import { NoteView, FileView, FolderView } from "./views.js";
 import { Explorer, SearchPanel, TagsPanel, BookmarksPanel, SuggestionsPanel, InfoPanel, kindDot } from "./panels.js";
@@ -83,6 +84,7 @@ class App {
     this.showPanel(localStorage.getItem("atlante-panel") || "files");
     api("/props/keys").then((keys) => this.propKeys.replaceChildren(...keys.map((k) => h("option", { value: k.key })))).catch(() => {});
     this.restoreWorkspace();
+    onVaultStatus((st, was) => this.vaultChanged(st, was));
     this.pollStatus();
     clearInterval(this._poll);
     this._poll = setInterval(() => this.pollStatus(), 20_000);
@@ -411,11 +413,43 @@ class App {
     } else el.textContent = "";
   }
 
+  /** Passaggio tra server e copia sul Mac: ricarico quello che è aperto e avviso dei conflitti. */
+  vaultChanged(st, was) {
+    if (st.error && st.error !== this._vaultErr) toast(st.error, "error");
+    this._vaultErr = st.error;
+    for (const c of st.conflicts || []) {
+      const key = c.copy;
+      if (this._seenConflicts?.has(key)) continue;
+      (this._seenConflicts ||= new Set()).add(key);
+      toast(`Conflitto su «${c.rel}»: l'hai cambiata sia sul Mac sia sul server. La versione del Mac è in «${c.copy}».`, "error");
+    }
+    if (was === st.online || was === null || st.online === null) { this.pollStatus(); return; }
+    toast(st.online ? "Il server è di nuovo raggiungibile: le modifiche fatte offline sono state sincronizzate."
+      : "Server non raggiungibile: lavori sulla copia del vault sul Mac. Si sincronizza da sola quando torni online.");
+    this.explorer?.refresh();
+    for (const t of this.tabs) {
+      if (t.view instanceof NoteView && !t.view.dirty) t.view.load();
+      else if (t.type === "agenda") t.view.load();
+    }
+    this.pollStatus();
+  }
+
   async pollStatus() {
     const conn = this.statusEl.querySelector(".st-conn");
     const idx = this.statusEl.querySelector(".st-index");
+    if (isOffline()) {
+      const v = vaultState();
+      const when = v.last ? new Date(v.last).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "mai";
+      conn.className = "st-conn off";
+      conn.textContent = `Offline · copia del vault sul Mac (ultima sincronizzazione: ${when})`;
+      conn.title = "Note, eventi e todo funzionano lo stesso. Il resto del server torna appena è raggiungibile.";
+      idx.textContent = "";
+      return;
+    }
+    conn.title = "";
     try {
       const s = await api("/status");
+      if (isOffline()) { this.pollStatus(); return; }
       conn.className = "st-conn ok";
       conn.textContent = `${(s.items.s || 0).toLocaleString("it-IT")} file sul server · ${(s.items.n || 0).toLocaleString("it-IT")} nel vault`;
       if (s.scanning) idx.textContent = `Indicizzazione in corso: ${s.scanned.toLocaleString("it-IT")} elementi letti`;
@@ -489,6 +523,13 @@ class App {
       { label: "Ricontrolla tutto il disco ora", run: async () => { await api("/rescan", { method: "POST" }); toast("Ricontrollo del disco avviato."); } },
       { label: "Chiudi scheda", key: "⌘W", run: () => this.active && this.closeTab(this.active) },
       { label: "Chiudi tutte le schede", run: () => [...this.tabs].forEach((t) => this.closeTab(t)) },
+      { label: "Sincronizza ora la copia del vault sul Mac", run: async () => {
+        const st = await syncNow();
+        if (!st) return;
+        toast(st.online ? "Copia del vault sul Mac aggiornata." : "Il server non risponde: resto sulla copia del Mac.", st.online ? "info" : "error");
+        if (st.error) toast(st.error, "error");
+      } },
+      { label: "Mostra la copia del vault sul Mac nel Finder", run: () => revealVault() },
       { label: "Impostazioni", run: () => this.openSettings() },
     ].filter(Boolean);
   }

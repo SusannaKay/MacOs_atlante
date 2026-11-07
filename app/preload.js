@@ -10,5 +10,12 @@ contextBridge.exposeInMainWorld("atlanteBridge", {
   aiStatus: () => ipcRenderer.invoke("ai:status"),
   aiModels: () => ipcRenderer.invoke("ai:models"),
   onAiStatus: (fn) => ipcRenderer.on("ai-status", (_e, st) => fn(st)),
+  vaultRequest: (p, opts) => ipcRenderer.invoke("vault:request", p, opts),
+  vaultStatus: () => ipcRenderer.invoke("vault:status"),
+  vaultOffline: () => ipcRenderer.invoke("vault:offline"),
+  vaultSyncSoon: () => ipcRenderer.invoke("vault:sync-soon"),
+  vaultSyncNow: () => ipcRenderer.invoke("vault:sync-now"),
+  vaultReveal: () => ipcRenderer.invoke("vault:reveal"),
+  onVaultStatus: (fn) => ipcRenderer.on("vault-status", (_e, st) => fn(st)),
   platform: process.platform,
 });

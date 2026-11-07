@@ -15,4 +15,15 @@ await esbuild.build({
   assetNames: "fonts/[name]-[hash]",
   logLevel: "info",
 });
+// copia del vault sul Mac: gira nel processo principale (Node), con yaml dentro
+await esbuild.build({
+  entryPoints: ["vault/index.js"],
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  target: ["node20"],
+  outfile: "dist/vault.cjs",
+  external: ["electron"],
+  logLevel: "info",
+});
 copyFileSync("src/index.html", "dist/index.html");

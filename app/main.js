@@ -1,6 +1,7 @@
 // Atlante — processo principale di Electron (finestra, impostazioni, download).
 const { app, BrowserWindow, ipcMain, safeStorage, shell, Menu, dialog, powerMonitor, powerSaveBlocker } = require("electron");
 const { AiWorker } = require("./ai-worker");
+const { createVault } = require("./dist/vault.cjs");
 const path = require("path");
 const fs = require("fs");
 
@@ -110,6 +111,7 @@ const worker = new AiWorker({
 });
 function applyAi(cfg) {
   configCache = cfg;
+  vault?.sync.start();
   if (cfg.aiEnabled && cfg.url && cfg.token) worker.start();
   else worker.stop();
 }
@@ -121,6 +123,26 @@ ipcMain.handle("ai:models", async () => {
     return { ok: false, error: e.message, models: [] };
   }
 });
+// ---- copia del vault sul Mac, per lavorare anche senza il server
+let vault = null;
+function startVault() {
+  vault = createVault({
+    userData: app.getPath("userData"),
+    getConfig: () => configCache || readConfig(),
+    onStatus: (st) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("vault-status", st)),
+  });
+  vault.sync.start();
+}
+ipcMain.handle("vault:request", (_e, p, opts) => vault.request(p, opts));
+ipcMain.handle("vault:status", () => ({ ...vault.sync.status, root: vault.root }));
+ipcMain.handle("vault:offline", () => vault.sync.reportOffline());
+ipcMain.handle("vault:sync-soon", () => vault.sync.syncSoon());
+ipcMain.handle("vault:sync-now", async () => {
+  try { await vault.sync.probe(); } catch { /* lo stato dice cosa è successo */ }
+  return vault.sync.status;
+});
+ipcMain.handle("vault:reveal", () => shell.openPath(vault.root));
+
 ipcMain.handle("download", (e, url) => {
   e.sender.downloadURL(url);
 });
@@ -165,6 +187,7 @@ function buildMenu() {
 
 app.whenReady().then(() => {
   buildMenu();
+  startVault();
   createWindow();
   applyAi(readConfig());
   app.on("activate", () => {

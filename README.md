@@ -56,6 +56,16 @@ Events are plain notes with `tipo: evento` and a `data:` in the frontmatter. To-
 - Ticking a to-do in the Agenda writes `[x]` into the note. To-dos in an event note without a date count as due on the event day.
 - **Quick to-dos** without an event (the *Todo* button, double click on a day, or ⌘P → *Nuova todo*) go to `Da fare.md` in the vault, each with its own date.
 
+### Working offline
+
+The Mac app keeps a copy of the vault (notes, events, to-dos and the files in the vault) in `~/Library/Application Support/Atlante/vault` and syncs it with the server every minute. When the server can't be reached (no internet, Tailscale off), Atlante switches to that copy by itself: you can read and edit notes, use the Agenda, tick and add to-dos and create events. The status bar turns yellow and says *Offline*.
+
+When the server is back, the changes made offline are synced first, then the app goes back online.
+
+- If the same note was changed on both sides, the server version stays and yours is saved next to it as `name (conflitto Mac YYYY-MM-DD HHMM).md`. Nothing gets lost.
+- Offline you can still rename, move and delete notes (deleted ones go to the trash on the server once you're back). The server files, the graph and the AI suggestions need the server.
+- If a lot of files suddenly disappear from one side (the server's disk got unplugged, say), the sync deletes nothing and tells you.
+
 ### Where a file's year comes from
 
 The Years graph needs to know when each file is from. Atlante tries, in order:
@@ -176,7 +186,7 @@ atlante/
 │   │   ├── notes.py         vault: links, tags, frontmatter
 │   │   ├── ai.py            queue and storage for the AI analysis
 │   │   ├── wiki.py          compiled wiki pages, index.md, log.md
-│   │   ├── agenda.py        events, to-dos, event template
+│   │   ├── agenda.py        events, to-dos, event template, sync manifest
 │   │   └── config.py
 │   ├── config.yaml          folders to skip, scan interval
 │   ├── docker-compose.yml
@@ -184,6 +194,7 @@ atlante/
 └── app/                     the Mac app
     ├── main.js              Electron main process, settings, Keychain
     ├── ai-worker.js         talks to Ollama, runs profile/match/compile
+    ├── vault/               offline copy of the vault: two-way sync and a local engine
     ├── preload.js
     └── src/                 interface: editor (CodeMirror), graph (d3-force), agenda, panels
 ```
