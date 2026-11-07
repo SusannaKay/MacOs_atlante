@@ -10,6 +10,15 @@ import { AgendaView, newEventDialog } from "./agenda.js";
 import { h, icon, toast, modal, displayName, linkFor } from "./util.js";
 
 const WS_KEY = "atlante-workspace";
+const n = (x) => Number(x || 0).toLocaleString("it-IT");
+
+/** Avanzamento della fase in corso: prima la lettura, poi i collegamenti, poi la wiki. */
+function aiPhase(s) {
+  if (s.profiled < s.total) return `fase 1/3, letti ${n(s.profiled)}/${n(s.total)}`;
+  const matched = Math.min(s.matched, s.profiled);
+  if (matched < s.profiled) return `fase 2/3, confrontati ${n(matched)}/${n(s.profiled)}`;
+  return `fase 3/3, wiki: ${n(s.wiki)} pagine`;
+}
 
 class App {
   constructor() {
@@ -384,7 +393,7 @@ class App {
     this.aiChip.hidden = !on;
     if (on) {
       const s = st.stats;
-      const progress = s ? ` · ${s.profiled.toLocaleString("it-IT")}/${s.total.toLocaleString("it-IT")} letti` : "";
+      const progress = s ? " · " + aiPhase(s) : "";
       this.aiChip.className = "st-ai " + st.state;
       this.aiChip.replaceChildren(icon("spark", 12), ` ${st.message}${progress}`);
       this.aiChip.title = "Analisi con Ollama: apri i suggerimenti";
@@ -582,7 +591,8 @@ class App {
         if (!aiState.isConnected) { this.settingsAi = null; return; }
         const s = st.stats;
         aiState.textContent = st.state === "off" ? "Spenta." : st.message +
-          (s ? ` Letti ${s.profiled.toLocaleString("it-IT")} su ${s.total.toLocaleString("it-IT")}; ${s.pending} suggerimenti da rivedere, ${s.accepted} accettati.` +
+          (s ? ` Fase 1, lettura: ${n(s.profiled)} su ${n(s.total)}. Fase 2, collegamenti: ${n(Math.min(s.matched, s.profiled))} su ${n(s.profiled)}. ` +
+            `${s.pending} suggerimenti da rivedere, ${s.accepted} accettati.` +
             (s.wiki != null ? ` Pagine nella wiki: ${s.wiki}.` : "") : "");
       };
       aiStatus().then((st) => this.settingsAi?.(st));
