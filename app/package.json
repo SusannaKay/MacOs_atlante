@@ -1,7 +1,7 @@
 {
   "name": "atlante",
   "productName": "Atlante",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Atlante: organizza i file del tuo server come in Obsidian",
   "main": "main.js",
   "private": true,
@@ -35,8 +35,33 @@
   "build": {
     "appId": "it.sus.atlante",
     "productName": "Atlante",
-    "files": ["main.js", "preload.js", "ai-worker.js", "dist/**/*", "package.json"],
-    "directories": { "output": "release" },
-    "mac": { "category": "public.app-category.productivity", "icon": "build/icon.png", "target": ["dir"] }
+    "files": [
+      "main.js",
+      "preload.js",
+      "ai-worker.js",
+      "engine.js",
+      "dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "target": [
+        "dir"
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "../server",
+        "to": "engine",
+        "filter": [
+          "app/**/*.py",
+          "requirements.txt"
+        ]
+      }
+    ]
   }
 }

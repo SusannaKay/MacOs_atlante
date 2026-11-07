@@ -1,5 +1,5 @@
 // Pannelli laterali: esplora, cerca, tag, segnalibri (sinistra) e informazioni (destra).
-import { api, thumbUrl } from "./api.js";
+import { api, thumbUrl, sourceName } from "./api.js";
 import { GraphView } from "./graph.js";
 import {
   h, icon, kindLabel, displayName, linkFor, toast, contextMenu, prompt, confirmBox, debounce, YEAR_SRC,
@@ -29,7 +29,7 @@ export class Explorer {
   async refresh() {
     const roots = [
       { id: "n:", name: "Note", is_dir: true, kind: "dir", src: "n", rel: "" },
-      { id: "s:", name: "Server", is_dir: true, kind: "dir", src: "s", rel: "" },
+      { id: "s:", name: sourceName(), is_dir: true, kind: "dir", src: "s", rel: "" },
     ];
     const frag = h("div", {});
     for (const r of roots) frag.append(await this.node(r, 0));

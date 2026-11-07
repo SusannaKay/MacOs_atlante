@@ -700,3 +700,24 @@ button.link:hover { background: var(--bg-hover); }
 
 .ag-add { display: flex; gap: 6px; margin-top: 10px; }
 .ag-add input { flex: 1; }
+
+/* ------------------------------------------------------------------ impostazioni: server o questo Mac */
+.mode-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.settings .mode-opt {
+  flex-direction: row; align-items: flex-start; gap: 8px; padding: 10px 12px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--r-m); color: var(--text);
+}
+.settings .mode-opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.mode-opt input { margin-top: 3px; accent-color: var(--accent); }
+.mode-opt span { display: flex; flex-direction: column; gap: 2px; }
+.mode-opt small { color: var(--text-muted); font-size: 12px; }
+.mode-box { display: flex; flex-direction: column; gap: 10px; }
+.mode-box[hidden] { display: none; }
+.pick { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; font-size: 13px; color: var(--text-muted); }
+.pick > span { grid-column: 1 / -1; }
+.pick .path {
+  font-size: 12px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--bg);
+  color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+}
+.pick .path bdi { direction: ltr; unicode-bidi: isolate; }
+.welcome .err { color: var(--danger); }

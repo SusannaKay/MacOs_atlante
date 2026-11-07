@@ -17,5 +17,10 @@ contextBridge.exposeInMainWorld("atlanteBridge", {
   vaultSyncNow: () => ipcRenderer.invoke("vault:sync-now"),
   vaultReveal: () => ipcRenderer.invoke("vault:reveal"),
   onVaultStatus: (fn) => ipcRenderer.on("vault-status", (_e, st) => fn(st)),
+  engineStatus: () => ipcRenderer.invoke("engine:status"),
+  engineRetry: () => ipcRenderer.invoke("engine:retry"),
+  engineDefaultVault: () => ipcRenderer.invoke("engine:default-vault"),
+  pickFolder: (opts) => ipcRenderer.invoke("engine:pick-folder", opts),
+  onEngineStatus: (fn) => ipcRenderer.on("engine-status", (_e, st) => fn(st)),
   platform: process.platform,
 });

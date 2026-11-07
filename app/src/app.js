@@ -1,6 +1,7 @@
 // Atlante — struttura dell'app: barra laterale, schede, palette dei comandi, impostazioni.
 import {
   api, loadConfig, saveConfig, config, isConfigured, hasBridge, isMacApp, onCommand,
+  isLocalMode, canUseLocalEngine, engineStatus, engineRetry, engineDefaultVault, pickFolder, onEngineStatus, sourceName,
   aiAvailable, aiStatus, aiModels, onAiStatus,
   isOffline, onVaultStatus, vaultState, syncNow, revealVault,
 } from "./api.js";
@@ -57,6 +58,21 @@ class App {
     await loadConfig();
     this.applyTheme();
     this.buildLayout();
+    // il motore sul Mac può cambiare porta e token quando riparte: ricarico la configurazione
+    onEngineStatus(async (st) => {
+      this.engineSt = st;
+      this.engineWait?.(st);
+      this.settingsEngine?.(st);
+      if (st.state === "ready") {
+        await loadConfig();
+        if (!this.panels && !this.settingsOpen) this.boot();
+        else if (this.panels) { this.explorer.refresh(); this.pollStatus(); }
+      }
+    });
+    if (isLocalMode() && !isConfigured()) {
+      this.showEngineWait(await engineStatus());
+      return;
+    }
     if (!isConfigured()) {
       this.showWelcome();
       this.openSettings(true);
@@ -145,7 +161,27 @@ class App {
   showWelcome() {
     this.stage.replaceChildren(h("div", { class: "welcome" },
       h("h1", {}, "Atlante"),
-      h("p", {}, "Collega l'app al motore sul tuo server per vedere e organizzare i tuoi file.")));
+      h("p", {}, canUseLocalEngine()
+        ? "Organizza i file del tuo server, oppure una cartella o un disco di questo Mac."
+        : "Collega l'app al motore sul tuo server per vedere e organizzare i tuoi file.")));
+  }
+
+  /** Modalità «Questo Mac»: il motore si sta preparando o avviando. */
+  showEngineWait(st) {
+    const text = h("p", { class: "muted" });
+    const actions = h("div", { class: "row" });
+    const draw = (s) => {
+      if (s.state === "ready" || this.panels) { this.engineWait = null; return; }
+      text.textContent = s.message || "Avvio il motore su questo Mac…";
+      text.classList.toggle("err", s.state === "error");
+      actions.replaceChildren(...(s.state === "error" ? [
+        h("button", { class: "btn primary", onclick: async () => { await engineRetry(); if (isConfigured()) this.boot(); } }, "Riprova"),
+        h("button", { class: "btn ghost", onclick: () => this.openSettings() }, "Impostazioni"),
+      ] : []));
+    };
+    this.engineWait = draw;
+    this.stage.replaceChildren(h("div", { class: "welcome" }, h("h1", {}, "Atlante"), text, actions));
+    draw(st || {});
   }
 
   showPanel(name, focus = false) {
@@ -451,7 +487,9 @@ class App {
       const s = await api("/status");
       if (isOffline()) { this.pollStatus(); return; }
       conn.className = "st-conn ok";
-      conn.textContent = `${(s.items.s || 0).toLocaleString("it-IT")} file sul server · ${(s.items.n || 0).toLocaleString("it-IT")} nel vault`;
+      conn.textContent = isLocalMode()
+        ? `${(s.items.s || 0).toLocaleString("it-IT")} file in «${sourceName()}» · ${(s.items.n || 0).toLocaleString("it-IT")} note`
+        : `${(s.items.s || 0).toLocaleString("it-IT")} file sul server · ${(s.items.n || 0).toLocaleString("it-IT")} nel vault`;
       if (s.scanning) idx.textContent = `Indicizzazione in corso: ${s.scanned.toLocaleString("it-IT")} elementi letti`;
       else if (s.pending_enrich) idx.textContent = `Lettura del testo: ${s.pending_enrich.toLocaleString("it-IT")} file in coda`;
       else idx.textContent = "";
@@ -606,12 +644,61 @@ class App {
   // ------------------------------------------------------------ impostazioni
   openSettings(first = false) {
     const c = config();
-    const url = h("input", { type: "url", value: c.url || "", placeholder: "https://server.tailnet.ts.net:8102", required: true });
-    const token = h("input", { type: "password", value: "", placeholder: c.token ? "Già salvato: lascia vuoto per non cambiarlo" : "Incolla il token", autocomplete: "off" });
+    this.settingsOpen = true;
+    let mode = c.mode === "local" ? "local" : "server";
+    const url = h("input", { type: "url", value: c.serverUrl ?? c.url ?? "", placeholder: "https://server.tailnet.ts.net:8102" });
+    const hasTok = c.hasServerToken ?? Boolean(c.token);
+    const token = h("input", { type: "password", value: "", placeholder: hasTok ? "Già salvato: lascia vuoto per non cambiarlo" : "Incolla il token", autocomplete: "off" });
     const theme = h("select", {},
       h("option", { value: "auto" }, "Come il Mac"), h("option", { value: "dark" }, "Scuro"), h("option", { value: "light" }, "Chiaro"));
     theme.value = c.theme || "auto";
     const msg = h("p", { class: "settings-msg", role: "status" });
+
+    // dove sono i file: server (Tailscale) oppure una cartella di questo Mac
+    let storage = c.localStorage || "";
+    let vaultDir = c.localVault || "";
+    if (!vaultDir) engineDefaultVault().then((p) => { vaultDir = vaultDir || p; drawLocal(); });
+    const storageLabel = h("code", { class: "path" });
+    const vaultLabel = h("code", { class: "path" });
+    const drawLocal = () => {
+      // il percorso si accorcia da sinistra, così resta visibile il nome della cartella
+      storageLabel.replaceChildren(h("bdi", {}, storage || "nessuna cartella scelta"));
+      vaultLabel.replaceChildren(h("bdi", {}, vaultDir || "…"));
+      storageLabel.title = storage;
+      vaultLabel.title = vaultDir;
+    };
+    drawLocal();
+    const choose = async (which) => {
+      const p = await pickFolder(which === "storage"
+        ? { title: "Cartella o disco da organizzare", defaultPath: storage || undefined }
+        : { title: "Cartella delle note", defaultPath: vaultDir || undefined });
+      if (!p) return;
+      if (which === "storage") storage = p; else vaultDir = p;
+      drawLocal();
+    };
+    const serverBox = h("div", { class: "mode-box" },
+      first ? h("p", { class: "muted small" }, "Trovi indirizzo e token nelle istruzioni di installazione del motore sul server.") : null,
+      h("label", {}, "Indirizzo del server", url),
+      h("label", {}, "Token di accesso", token));
+    const localBox = h("div", { class: "mode-box" },
+      h("div", { class: "pick" }, h("span", {}, "Cartella o disco da organizzare"), storageLabel,
+        h("button", { type: "button", class: "btn small", onclick: () => choose("storage") }, "Scegli…")),
+      h("div", { class: "pick" }, h("span", {}, "Cartella delle note"), vaultLabel,
+        h("button", { type: "button", class: "btn small", onclick: () => choose("vault") }, "Scegli…")),
+      h("p", { class: "muted small" }, "I file della cartella da organizzare restano in sola lettura: Atlante non sposta e non rinomina niente. " +
+        "Il motore gira su questo Mac; la prima volta si prepara da solo (serve Python 3.10 o più recente e qualche minuto). " +
+        "Per leggere il testo dei PDF installa anche poppler («brew install poppler»)."));
+    const radios = canUseLocalEngine() ? h("div", { class: "mode-pick", role: "radiogroup", "aria-label": "Dove sono i file" },
+      ...[["server", "Il mio server", "Raggiunto con Tailscale"], ["local", "Questo Mac", "Una cartella o un disco collegato"]].map(([v, t, d]) =>
+        h("label", { class: "mode-opt" },
+          h("input", { type: "radio", name: "atl-mode", value: v, checked: mode === v, onchange: () => { mode = v; showMode(); } }),
+          h("span", {}, h("b", {}, t), h("small", {}, d))))) : null;
+    const showMode = () => {
+      serverBox.hidden = mode !== "server";
+      localBox.hidden = mode !== "local";
+      testBtn.hidden = mode !== "server";
+      msg.textContent = "";
+    };
 
     // analisi con Ollama (solo nell'app per Mac)
     let aiBox = null;
@@ -657,7 +744,7 @@ class App {
       msg.className = "settings-msg";
       msg.textContent = "Controllo il collegamento…";
       try {
-        const s = await api("/status", { override: { url: url.value.replace(/\/+$/, ""), token: token.value || c.token } });
+        const s = await api("/status", { override: { url: url.value.replace(/\/+$/, ""), token: token.value || c.serverToken || c.token } });
         msg.className = "settings-msg ok";
         msg.textContent = `Collegato. ${(s.items.s || 0).toLocaleString("it-IT")} file sul server, ${(s.items.n || 0).toLocaleString("it-IT")} nel vault.`;
         return true;
@@ -667,39 +754,64 @@ class App {
         return false;
       }
     };
+    const testBtn = h("button", { type: "button", class: "btn ghost", onclick: test }, "Prova il collegamento");
+    const saveBtn = h("button", { type: "submit", class: "btn primary" }, "Salva");
+    const aiPart = () => (aiBox ? { aiEnabled: aiOn.checked && Boolean(aiModel.value), aiModel: aiModel.value, aiBattery: aiBattery.checked } : {});
+    const showErr = (err) => {
+      msg.className = "settings-msg err";
+      msg.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+    };
+    const done = () => {
+      this.applyTheme();
+      m.close();
+      if (!this.panels) this.boot();
+      else { this.explorer.refresh(); this.pollStatus(); this.tabs.forEach((t) => t.view.loadMeta?.()); }
+    };
     const form = h("form", {
       class: "settings",
       onsubmit: async (e) => {
         e.preventDefault();
-        if (!(await test())) return;
-        try {
-          await saveConfig({
-            url: url.value, token: token.value || undefined, theme: theme.value,
-            ...(aiBox ? { aiEnabled: aiOn.checked && Boolean(aiModel.value), aiModel: aiModel.value, aiBattery: aiBattery.checked } : {}),
-          });
-        } catch (err) {
-          msg.className = "settings-msg err";
-          msg.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+        if (mode === "server") {
+          if (!url.value.trim()) { showErr("Scrivi l'indirizzo del server."); return; }
+          if (!(await test())) return;
+          try {
+            await saveConfig({ mode: "server", url: url.value, token: token.value || undefined, theme: theme.value, ...aiPart() });
+          } catch (err) { showErr(err); return; }
+          done();
           return;
         }
-        this.applyTheme();
-        m.close();
-        if (!this.panels) this.boot();
-        else { this.explorer.refresh(); this.pollStatus(); }
+        // questo Mac: preparo e avvio il motore (la prima volta può volerci qualche minuto)
+        if (!storage) { showErr("Scegli la cartella o il disco da organizzare."); return; }
+        if (!vaultDir) { showErr("Scegli la cartella delle note."); return; }
+        saveBtn.disabled = true;
+        msg.className = "settings-msg";
+        msg.textContent = "Avvio il motore su questo Mac…";
+        this.settingsEngine = (st) => { if (st.message && st.state !== "ready") msg.textContent = st.message; };
+        try {
+          const next = await saveConfig({ mode: "local", localStorage: storage, localVault: vaultDir, theme: theme.value, ...aiPart() });
+          this.settingsEngine = null;
+          saveBtn.disabled = false;
+          if (!isConfigured()) { showErr(next.engine?.message || "Il motore non è partito."); return; }
+          done();
+        } catch (err) {
+          this.settingsEngine = null;
+          saveBtn.disabled = false;
+          showErr(err);
+        }
       },
     },
-    h("h2", {}, first ? "Collega Atlante al server" : "Impostazioni"),
-    first ? h("p", { class: "muted" }, "Trovi indirizzo e token nelle istruzioni di installazione del motore sul server.") : null,
-    h("label", {}, "Indirizzo del server", url),
-    h("label", {}, "Token di accesso", token),
+    h("h2", {}, first ? "Configura Atlante" : "Impostazioni"),
+    radios ? h("p", { class: "muted small" }, "Dove sono i file da organizzare?") : null,
+    radios,
+    serverBox,
+    localBox,
     h("label", {}, "Tema", theme),
     aiBox,
     msg,
-    h("div", { class: "row end" },
-      h("button", { type: "button", class: "btn ghost", onclick: test }, "Prova il collegamento"),
-      h("button", { type: "submit", class: "btn primary" }, "Salva")));
-    const m = modal(form);
-    (first ? url : theme).focus();
+    h("div", { class: "row end" }, testBtn, saveBtn));
+    const m = modal(form, { onClose: () => { this.settingsOpen = false; this.settingsEngine = null; } });
+    showMode();
+    (first ? (mode === "server" ? url : saveBtn) : theme).focus();
     theme.addEventListener("change", () => { document.documentElement.dataset.theme = theme.value; if (theme.value === "auto") document.documentElement.removeAttribute("data-theme"); });
   }
 }

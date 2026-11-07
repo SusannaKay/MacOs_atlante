@@ -1,4 +1,4 @@
-// Comunicazione con il motore di Atlante sul server.
+// Comunicazione con il motore di Atlante (sul server, oppure su questo Mac).
 
 const bridge = window.atlanteBridge || null;
 let cfg = { url: "", token: "", theme: "auto" };
@@ -24,6 +24,16 @@ export async function saveConfig(next) {
 
 export const config = () => cfg;
 export const isConfigured = () => Boolean(cfg.url && cfg.token);
+/** Modalità «Questo Mac»: il motore gira sul Mac, avviato dall'app. */
+export const isLocalMode = () => cfg.mode === "local";
+export const canUseLocalEngine = () => Boolean(bridge?.engineStatus);
+export const engineStatus = () => (bridge?.engineStatus ? bridge.engineStatus() : Promise.resolve({ state: "off" }));
+export const engineRetry = async () => { if (bridge?.engineRetry) cfg = await bridge.engineRetry(); return cfg; };
+export const engineDefaultVault = () => (bridge?.engineDefaultVault ? bridge.engineDefaultVault() : Promise.resolve(""));
+export const pickFolder = (opts) => (bridge?.pickFolder ? bridge.pickFolder(opts) : Promise.resolve(null));
+export const onEngineStatus = (fn) => bridge?.onEngineStatus?.(fn);
+/** Nome della fonte dei file: «Server», oppure la cartella scelta su questo Mac. */
+export const sourceName = () => (isLocalMode() && cfg.localStorage ? cfg.localStorage.split("/").filter(Boolean).pop() || "Mac" : "Server");
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -44,7 +54,7 @@ function qs(params) {
 // ---------------------------------------------------------------- copia sul Mac (offline)
 // Quando il server non risponde, le richieste vanno alla copia del vault sul Mac (processo principale),
 // che si sincronizza da sola appena il server torna raggiungibile.
-const hasLocal = () => Boolean(bridge?.vaultRequest);
+const hasLocal = () => Boolean(bridge?.vaultRequest) && cfg.mode !== "local"; // con il motore sul Mac non serve
 let vault = { online: null, syncing: false, last: null, error: null, conflicts: [], root: "" };
 const vaultListeners = new Set();
 export const vaultState = () => vault;

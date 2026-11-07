@@ -1,5 +1,5 @@
 // Viste del pannello centrale: nota, file del server, cartella.
-import { api, rawUrl, thumbUrl, download, ApiError } from "./api.js";
+import { api, rawUrl, thumbUrl, download, ApiError, sourceName } from "./api.js";
 import { createEditor } from "./editor.js";
 import { createRenderer, enhanceTasks, splitFrontmatter, withFrontmatter, linkTarget } from "./markdown.js";
 import {
@@ -10,7 +10,7 @@ const PREVIEW_IMG = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", 
 
 function breadcrumb(item, ctx) {
   const parts = item.rel.split("/");
-  const root = item.src === "n" ? "Note" : "Server";
+  const root = item.src === "n" ? "Note" : sourceName();
   const crumbs = [h("button", { class: "crumb", onclick: () => ctx.revealInTree(item.src + ":") }, root)];
   parts.slice(0, -1).forEach((p, i) => {
     const id = item.src + ":" + parts.slice(0, i + 1).join("/");
@@ -397,7 +397,7 @@ export class FolderView {
   }
 
   get title() {
-    if (this.id === "s:") return "Server";
+    if (this.id === "s:") return sourceName();
     if (this.id === "n:") return "Note";
     return this.id.split("/").pop().replace(/^[sn]:/, "");
   }

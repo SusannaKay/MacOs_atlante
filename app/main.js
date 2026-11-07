@@ -2,30 +2,54 @@
 const { app, BrowserWindow, ipcMain, safeStorage, shell, Menu, dialog, powerMonitor, powerSaveBlocker } = require("electron");
 const { AiWorker } = require("./ai-worker");
 const { createVault } = require("./dist/vault.cjs");
+const { LocalEngine } = require("./engine");
 const path = require("path");
 const fs = require("fs");
 
 const CONFIG_FILE = () => path.join(app.getPath("userData"), "config.json");
 
-function readConfig() {
+// Il file di configurazione contiene:
+//   mode          "server" (predefinito) oppure "local" (motore su questo Mac)
+//   url, token    il motore sul server (token cifrato con il Portachiavi)
+//   localStorage, localVault   in modalità local: la cartella da organizzare e quella delle note
+function readStored() {
   try {
     const c = JSON.parse(fs.readFileSync(CONFIG_FILE(), "utf8"));
     let token = c.token_plain || "";
     if (c.token_enc && safeStorage.isEncryptionAvailable()) {
       token = safeStorage.decryptString(Buffer.from(c.token_enc, "base64"));
     }
-    return { url: c.url || "", token, theme: c.theme || "auto", ...aiFields(c) };
+    return {
+      mode: c.mode === "local" ? "local" : "server", url: c.url || "", token, theme: c.theme || "auto",
+      localStorage: c.localStorage || "", localVault: c.localVault || "", ...aiFields(c),
+    };
   } catch {
-    return { url: "", token: "", theme: "auto", ...aiFields({}) };
+    return { mode: "server", url: "", token: "", theme: "auto", localStorage: "", localVault: "", ...aiFields({}) };
   }
+}
+
+/** Configurazione per il resto dell'app: url e token sono quelli del motore in uso (server o Mac). */
+function readConfig() {
+  const s = readStored();
+  const out = { ...s, serverUrl: s.url, serverToken: s.token, hasServerToken: Boolean(s.token) };
+  if (s.mode === "local") {
+    const st = engine?.status || {};
+    out.url = st.state === "ready" ? st.url : "";
+    out.token = st.state === "ready" ? st.token : "";
+    out.engine = { state: st.state || "off", message: st.message || "" };
+  }
+  return out;
 }
 
 function aiFields(c) {
   return { aiEnabled: Boolean(c.aiEnabled), aiModel: c.aiModel || "", aiBattery: c.aiBattery !== false };
 }
 
-function writeConfig({ url, token, theme, ...rest }) {
-  const out = { url: (url || "").replace(/\/+$/, ""), theme: theme || "auto", ...aiFields(rest) };
+function writeConfig({ url, token, theme, mode, localStorage, localVault, ...rest }) {
+  const out = {
+    mode: mode === "local" ? "local" : "server", url: (url || "").replace(/\/+$/, ""), theme: theme || "auto",
+    localStorage: localStorage || "", localVault: localVault || "", ...aiFields(rest),
+  };
   if (token) {
     if (safeStorage.isEncryptionAvailable()) {
       out.token_enc = safeStorage.encryptString(token).toString("base64");
@@ -85,15 +109,53 @@ function createWindow() {
 }
 
 ipcMain.handle("config:get", () => readConfig());
-ipcMain.handle("config:set", (_e, c) => {
-  const cur = readConfig();
+ipcMain.handle("config:set", async (_e, c) => {
+  const cur = readStored(); // i valori salvati, non quelli del motore in uso
   writeConfig({
-    url: c.url ?? cur.url, token: c.token ?? cur.token, theme: c.theme ?? cur.theme,
+    mode: c.mode ?? cur.mode, url: c.url ?? cur.url, token: c.token ?? cur.token, theme: c.theme ?? cur.theme,
+    localStorage: c.localStorage ?? cur.localStorage, localVault: c.localVault ?? cur.localVault,
     aiEnabled: c.aiEnabled ?? cur.aiEnabled, aiModel: c.aiModel ?? cur.aiModel, aiBattery: c.aiBattery ?? cur.aiBattery,
   });
+  await applyMode();
   const next = readConfig();
   applyAi(next);
   return next;
+});
+
+// ---- motore su questo Mac (solo se nelle impostazioni scegli «Questo Mac»)
+let engine = null;
+function getEngine() {
+  if (!engine) {
+    engine = new LocalEngine({
+      home: path.join(app.getPath("userData"), "engine"),
+      source: app.isPackaged ? path.join(process.resourcesPath, "engine") : path.join(__dirname, "..", "server"),
+      onStatus: (st) => {
+        BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("engine-status", { state: st.state, message: st.message }));
+        if (st.state === "ready" || st.state === "error") applyAi(readConfig());
+      },
+    });
+  }
+  return engine;
+}
+/** Avvia o ferma il motore sul Mac secondo la modalità scelta. In modalità server non tocca niente. */
+async function applyMode() {
+  const s = readStored();
+  if (s.mode === "local") {
+    vault?.sync.stop();
+    try { await getEngine().start({ storage: s.localStorage, vault: s.localVault }); } catch { /* lo stato dice cosa non va */ }
+  } else if (engine) {
+    await engine.stop();
+  }
+}
+ipcMain.handle("engine:status", () => (engine ? { state: engine.status.state, message: engine.status.message } : { state: "off", message: "" }));
+ipcMain.handle("engine:retry", async () => { await applyMode(); return readConfig(); });
+ipcMain.handle("engine:default-vault", () => path.join(app.getPath("documents"), "Atlante"));
+ipcMain.handle("engine:pick-folder", async (e, { title, defaultPath } = {}) => {
+  const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
+    title: title || "Scegli una cartella", defaultPath: defaultPath || app.getPath("home"),
+    properties: ["openDirectory", "createDirectory"], buttonLabel: "Scegli",
+  });
+  return r.canceled ? null : r.filePaths[0];
 });
 
 // ---- analisi con Ollama
@@ -111,7 +173,7 @@ const worker = new AiWorker({
 });
 function applyAi(cfg) {
   configCache = cfg;
-  vault?.sync.start();
+  if (cfg.mode === "server") vault?.sync.start(); // la copia offline serve solo con il server
   if (cfg.aiEnabled && cfg.url && cfg.token) worker.start();
   else worker.stop();
 }
@@ -190,9 +252,16 @@ app.whenReady().then(() => {
   startVault();
   createWindow();
   applyAi(readConfig());
+  applyMode();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on("before-quit", (e) => {
+  if (!engine?.proc) return;
+  e.preventDefault(); // fermo il motore sul Mac prima di uscire
+  engine.stop().finally(() => { engine.proc = null; app.quit(); });
 });
 
 app.on("window-all-closed", () => {

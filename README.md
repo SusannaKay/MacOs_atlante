@@ -99,9 +99,15 @@ The wiki follows Andrej Karpathy's "LLM Wiki" idea: instead of a database-backed
 
 ## Setup
 
+Atlante works in two ways, and you pick one in the app's settings:
+
+- **My server**: the engine runs on a home server (Docker) and the Mac app reaches it, for example through Tailscale. This is how I use it.
+- **This Mac**: no server needed. You choose a folder or an external disk on your Mac and the app runs the same engine locally. Jump to [Without a server](#without-a-server).
+
 ### Requirements
 
-- A Linux server with Docker
+- For *My server*: a Linux server with Docker
+- For *This Mac*: Python 3.10 or newer on the Mac (`brew install python`, or the installer from python.org)
 - A Mac with Apple Silicon for the app (the build targets `arm64`)
 - Node.js 20+ to build the app
 - Optional: [Tailscale](https://tailscale.com) on both, to reach the server from anywhere
@@ -161,6 +167,16 @@ For development, `npm start` builds the interface and opens the app directly.
 
 On first launch the app asks for the engine address and the token. The token is stored in the macOS Keychain.
 
+### Without a server
+
+1. Build the app as in step 3.
+2. On first launch pick **This Mac**, then choose the folder or disk to organize and a folder for your notes (by default `~/Documents/Atlante`).
+3. The first time the app prepares the engine by itself: it creates a private Python environment in `~/Library/Application Support/Atlante/engine` and installs what it needs. It takes a few minutes and needs internet; after that it starts in a second.
+
+The folder you organize stays read-only, exactly like on the server. The engine listens only on `127.0.0.1` and stops when you quit the app. To read the text inside PDFs, install poppler too: `brew install poppler`. Without it everything works, PDFs are just found by name only.
+
+If something goes wrong, the engine's log is in `~/Library/Application Support/Atlante/engine/engine.log`.
+
 ### 5. Optional: turn on the AI
 
 ```bash
@@ -195,6 +211,7 @@ atlante/
     ├── main.js              Electron main process, settings, Keychain
     ├── ai-worker.js         talks to Ollama, runs profile/match/compile
     ├── vault/               offline copy of the vault: two-way sync and a local engine
+    ├── engine.js            "This Mac" mode: prepares and runs the server engine on the Mac
     ├── preload.js
     └── src/                 interface: editor (CodeMirror), graph (d3-force), agenda, panels
 ```
