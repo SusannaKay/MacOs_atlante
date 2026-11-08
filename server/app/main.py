@@ -402,6 +402,9 @@ def note_get(id: str, con=Depends(get_con)):
 def note_save(body: NoteSave, con=Depends(get_con)):
     vault_id_check(body.id)
     p = abs_path(body.id)
+    if body.base_mtime is not None and not os.path.exists(p):
+        # la nota è stata rinominata o spostata mentre la modificavi: non la ricreo col nome vecchio
+        raise HTTPException(404, "la nota è stata rinominata o spostata: riaprila e riprova")
     if body.base_mtime is not None and os.path.exists(p):
         cur = os.stat(p).st_mtime
         if abs(cur - body.base_mtime) > 1e-3:

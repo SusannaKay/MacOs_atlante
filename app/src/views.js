@@ -253,14 +253,33 @@ export class NoteView {
 
   async rename(newTitle) {
     newTitle = newTitle.trim();
-    if (!newTitle || newTitle === this.title) { this.titleInput.value = this.title; return; }
-    await this.save.flush();
+    if (!newTitle || newTitle === this.title || newTitle === this.renamingTo) {
+      if (!this.renamingTo) this.titleInput.value = this.title;
+      return;
+    }
+    // il rinomina entra nella stessa fila dei salvataggi: quello che scrivi mentre il server rinomina
+    // si salva dopo, sul nome nuovo (prima finiva sul nome vecchio e il server ricreava la nota: doppione)
+    this.renamingTo = newTitle;
+    const job = (this.saving || Promise.resolve()).then(() => this._rename(newTitle));
+    this.saving = job.catch(() => {});
+    try { await job; } finally { this.renamingTo = null; }
+  }
+
+  async _rename(newTitle) {
+    this.save.cancel();
+    await this._save(false);
     const folder = this.item.rel.split("/").slice(0, -1).join("/");
     try {
       const r = await api("/note/rename", { method: "POST", body: { id: this.id, new_rel: (folder ? folder + "/" : "") + newTitle } });
       this.ctx.replaceId(this.id, r.id);
       this.id = r.id;
-      await this.load();
+      if (this.dirty) { // hai continuato a scrivere: non ricarico il testo, prendo solo i dati nuovi
+        this.mtime = (await api("/note", { params: { id: this.id } })).mtime;
+        await this.loadMeta();
+        this.titleInput.value = this.title;
+      } else {
+        await this.load();
+      }
       this.ctx.treeChanged();
       toast("Nota rinominata. I link nelle altre note sono stati aggiornati.");
     } catch (e) {

@@ -316,6 +316,7 @@ class LocalVault {
   notePut({ id, text, base_mtime: base }, sync) {
     const rel = this.relOf(id);
     const p = this.abs(rel);
+    if (base != null && !fs.existsSync(p)) throw new LocalError(404, "la nota è stata rinominata o spostata: riaprila e riprova");
     if (base != null && fs.existsSync(p)) {
       const cur = fs.statSync(p).mtimeMs / 1000;
       // vale anche la data del server, se la copia sul Mac è ancora quella scaricata
