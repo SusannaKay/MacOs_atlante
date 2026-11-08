@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("atlanteBridge", {
   aiStatus: () => ipcRenderer.invoke("ai:status"),
   aiModels: () => ipcRenderer.invoke("ai:models"),
   onAiStatus: (fn) => ipcRenderer.on("ai-status", (_e, st) => fn(st)),
+  aiAsk: (q) => ipcRenderer.invoke("ai:ask", q),
+  onAiAskProgress: (fn) => ipcRenderer.on("ai-ask-progress", (_e, msg) => fn(msg)),
   vaultRequest: (p, opts) => ipcRenderer.invoke("vault:request", p, opts),
   vaultStatus: () => ipcRenderer.invoke("vault:status"),
   vaultOffline: () => ipcRenderer.invoke("vault:offline"),

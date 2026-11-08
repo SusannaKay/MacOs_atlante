@@ -55,6 +55,21 @@ const WIKI_SCHEMA = {
   required: ["scarta", "titolo", "descrizione", "tipo", "alias", "sintesi", "dettagli", "da_verificare", "collegati"],
 };
 
+const PICK_SCHEMA = {
+  type: "object",
+  properties: { pagine: { type: "array", items: { type: "integer" } }, file: { type: "array", items: { type: "integer" } } },
+  required: ["pagine", "file"],
+};
+const ANSWER_SCHEMA = {
+  type: "object",
+  properties: {
+    risposta: { type: "string" },
+    pagine_usate: { type: "array", items: { type: "integer" } },
+    file_usati: { type: "array", items: { type: "integer" } },
+  },
+  required: ["risposta", "pagine_usate", "file_usati"],
+};
+
 const ENTITY_RULE = "fino a 10 nomi specifici e distintivi (persone, aziende, enti, luoghi, progetti, opere, " +
   "pratiche, codici o numeri di contratto). Niente parole generiche come documento, file, pdf, foto, fattura, appunti.";
 
@@ -106,7 +121,7 @@ class AiWorker {
     return (j.models || []).map((m) => ({ name: m.name, size: m.size }));
   }
 
-  async chat(prompt, schema, numCtx = 8192) {
+  async chat(prompt, schema, numCtx = 8192, signal = this.ctrl?.signal) {
     const model = this.getConfig().aiModel;
     const res = await fetch(OLLAMA + "/api/chat", {
       method: "POST",
@@ -118,7 +133,7 @@ class AiWorker {
         options: { temperature: 0.1, num_ctx: numCtx },
         messages: [{ role: "system", content: SYSTEM }, { role: "user", content: prompt }],
       }),
-      signal: AbortSignal.any([AbortSignal.timeout(300_000), this.ctrl.signal]),
+      signal: signal ? AbortSignal.any([AbortSignal.timeout(300_000), signal]) : AbortSignal.timeout(300_000),
     });
     if (!res.ok) {
       let msg = `Ollama: ${res.status}`;
@@ -328,6 +343,56 @@ class AiWorker {
     });
     this.status.last = { what: "wiki", title: res.title || name, at: Date.now() };
     return true;
+  }
+
+  // ------------------------------------------------------------ domande alla wiki
+  /** Risponde a una domanda usando la wiki e salva la risposta in wiki/risposte. Restituisce l'id della nota. */
+  async ask(question, progress = () => {}) {
+    const c = this.getConfig();
+    if (!c.aiModel) throw new Error("Scegli un modello di Ollama nelle Impostazioni.");
+    try { await this.models(); } catch { throw new Error("Ollama non è acceso: aprilo e riprova."); }
+    const signal = AbortSignal.timeout(900_000);
+    progress("Cerco nella wiki…");
+    const cand = await this.server("/wiki/ask/candidates?q=" + encodeURIComponent(question));
+    if (!cand.pages.length && !cand.files.length) throw new Error("Non trovo niente nella wiki e nei file su questa domanda.");
+    const pagine = cand.pages.map((p, i) => `${i + 1}. ${p.title}${p.descrizione ? " — " + p.descrizione : ""}`).join("\n");
+    const files = cand.files.map((f, i) => `${i + 1}. ${f.path}${f.year ? ` (${f.year})` : ""}${f.summary ? " — " + f.summary : ""}`).join("\n");
+
+    progress("Scelgo le pagine utili…");
+    const pick = await this.chat(
+      `Domanda di Sus: «${question}»\n\n` +
+      (pagine ? `PAGINE DELLA WIKI:\n${pagine}\n\n` : "") + (files ? `FILE DELL'ARCHIVIO:\n${files}\n\n` : "") +
+      "Quali servono per rispondere? JSON con pagine (massimo 6 numeri) e file (massimo 4 numeri). " +
+      "Liste vuote se non c'entra niente.", PICK_SCHEMA, 12288, signal);
+    const pages = [...new Set((pick.pagine || []).map((n) => cand.pages[Number(n) - 1]).filter(Boolean))].slice(0, 6);
+    const chosenFiles = [...new Set((pick.file || []).map((n) => cand.files[Number(n) - 1]).filter(Boolean))].slice(0, 4);
+    if (!pages.length && !chosenFiles.length) throw new Error("La wiki non contiene ancora niente di utile per questa domanda.");
+
+    progress(`Leggo ${pages.length + chosenFiles.length} fonti e scrivo la risposta…`);
+    const full = pages.length ? (await this.server("/wiki/ask/pages?ids=" + encodeURIComponent(pages.map((p) => p.id).join("|")))).pages : [];
+    const fonti = [
+      ...full.map((p, i) => `[P${i + 1}] Pagina «${p.title}»\n${p.text}`),
+      ...chosenFiles.map((f, i) => `[F${i + 1}] File ${f.path}${f.year ? ` (${f.year})` : ""}\n${f.summary || "(nessun riassunto)"}`),
+    ].join("\n\n---\n\n");
+    const ans = await this.chat(
+      `Domanda di Sus: «${question}»\n\nFONTI:\n${fonti}\n\n` +
+      "Rispondi in italiano, in Markdown, in modo chiaro e diretto (elenchi puntati se servono). Usa solo le fonti: " +
+      "se non bastano per rispondere, dillo e spiega cosa manca. Non inventare date, nomi o cifre.\n" +
+      "JSON: risposta (il testo), pagine_usate (numeri delle P che hai usato), file_usati (numeri delle F che hai usato).",
+      ANSWER_SCHEMA, 16384, signal);
+    const text = String(ans.risposta || "").trim();
+    if (!text) throw new Error("Il modello non ha risposto. Riprova, magari con una domanda più precisa.");
+    const usedPages = (ans.pagine_usate || []).map((n) => full[Number(n) - 1]?.id).filter(Boolean);
+    const usedFiles = (ans.file_usati || []).map((n) => chosenFiles[Number(n) - 1]?.id).filter(Boolean);
+    progress("Salvo la risposta…");
+    const r = await this.server("/wiki/answer", {
+      method: "POST",
+      body: { question, answer: text, model: c.aiModel,
+        // se il modello non dice quali fonti ha usato, le elenco tutte
+        ...(usedPages.length || usedFiles.length ? { pages: usedPages, files: usedFiles }
+          : { pages: full.map((p) => p.id), files: chosenFiles.map((f) => f.id) }) },
+    });
+    return r.id;
   }
 }
 

@@ -721,3 +721,11 @@ button.link:hover { background: var(--bg-hover); }
 }
 .pick .path bdi { direction: ltr; unicode-bidi: isolate; }
 .welcome .err { color: var(--danger); }
+
+/* ------------------------------------------------------------------ domande alla wiki */
+.ask-form { min-width: 460px; }
+.ask-form textarea {
+  font: inherit; resize: vertical; min-height: 70px; padding: 8px 10px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-s);
+}
+.ask-form textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }

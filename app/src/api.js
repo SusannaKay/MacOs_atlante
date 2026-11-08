@@ -146,3 +146,8 @@ export const aiAvailable = () => Boolean(bridge?.aiStatus);
 export const aiStatus = () => (bridge?.aiStatus ? bridge.aiStatus() : Promise.resolve(null));
 export const aiModels = () => (bridge?.aiModels ? bridge.aiModels() : Promise.resolve({ ok: false, models: [] }));
 export const onAiStatus = (fn) => bridge?.onAiStatus?.(fn);
+export const canAsk = () => Boolean(bridge?.aiAsk);
+export const aiAsk = (q) => bridge.aiAsk(q);
+let askListener = null;
+if (typeof window !== "undefined") bridge?.onAiAskProgress?.((msg) => askListener?.(msg));
+export const onAskProgress = (fn) => { askListener = fn; };

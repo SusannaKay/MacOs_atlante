@@ -178,6 +178,13 @@ function applyAi(cfg) {
   else worker.stop();
 }
 ipcMain.handle("ai:status", () => worker.status);
+ipcMain.handle("ai:ask", async (e, question) => {
+  try {
+    return { ok: true, id: await worker.ask(String(question || "").trim(), (msg) => e.sender.send("ai-ask-progress", msg)) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 ipcMain.handle("ai:models", async () => {
   try {
     return { ok: true, models: await worker.models() };

@@ -1,6 +1,7 @@
 // Atlante — struttura dell'app: barra laterale, schede, palette dei comandi, impostazioni.
 import {
   api, loadConfig, saveConfig, config, isConfigured, hasBridge, isMacApp, onCommand,
+  canAsk, aiAsk, onAskProgress,
   isLocalMode, canUseLocalEngine, engineStatus, engineRetry, engineDefaultVault, pickFolder, onEngineStatus, sourceName,
   aiAvailable, aiStatus, aiModels, onAiStatus,
   isOffline, onVaultStatus, vaultState, syncNow, revealVault,
@@ -128,6 +129,7 @@ class App {
         h("button", { class: "rib-btn", title: "Grafo (⌘G)", "aria-label": "Apri il grafo", onclick: () => this.openGraph("global") }, icon("graph", 20)),
         h("button", { class: "rib-btn", title: "Grafo per anni", "aria-label": "Apri il grafo per anni", onclick: () => this.openGraph("global", null, "years") }, icon("years", 20)),
         h("button", { class: "rib-btn", title: "Agenda", "aria-label": "Apri l'agenda", onclick: () => this.openAgenda() }, icon("calendar", 20)),
+        canAsk() ? h("button", { class: "rib-btn", title: "Chiedi alla wiki", "aria-label": "Fai una domanda alla wiki", onclick: () => this.askWiki() }, icon("ask", 20)) : null,
         h("button", { class: "rib-btn", title: "Nuova nota (⌘N)", "aria-label": "Nuova nota", onclick: () => this.newNote() }, icon("note", 20))),
       h("div", { class: "rib-bottom" },
         h("button", { class: "rib-btn", title: "Impostazioni", "aria-label": "Impostazioni", onclick: () => this.openSettings() }, icon("settings", 20))));
@@ -330,6 +332,52 @@ class App {
     });
     tab.view = { title, graph, destroy: () => graph.destroy(), activate: () => graph.resize(), loadMeta: () => graph.load() };
     this.activate(tab);
+  }
+
+  /** Domanda alla wiki: qwen sceglie le pagine, risponde, e la risposta diventa una nota in wiki/risposte. */
+  askWiki() {
+    const q = h("textarea", { rows: 3, placeholder: "Es. Cosa è successo con il condominio nel 2025?", "aria-label": "La tua domanda" });
+    const status = h("p", { class: "settings-msg", role: "status" });
+    const go = h("button", { type: "submit", class: "btn primary" }, "Chiedi");
+    let busy = false;
+    const form = h("form", {
+      class: "prompt ask-form",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const text = q.value.trim();
+        if (!text || busy) return;
+        busy = true;
+        go.disabled = true;
+        q.disabled = true;
+        status.className = "settings-msg";
+        status.textContent = "Cerco nella wiki…";
+        onAskProgress((msg) => { status.textContent = msg; });
+        const r = await aiAsk(text);
+        onAskProgress(null);
+        busy = false;
+        if (!r.ok) {
+          go.disabled = false;
+          q.disabled = false;
+          status.className = "settings-msg err";
+          status.textContent = r.error;
+          return;
+        }
+        m.close();
+        this.explorer.refresh();
+        this.open(r.id, { newTab: true });
+      },
+    },
+    h("h2", {}, "Chiedi alla wiki"),
+    h("p", { class: "muted small" }, "qwen cerca tra le pagine della wiki e i riassunti dei file, poi risponde. " +
+      "La risposta resta salvata in wiki/risposte, così la ritrovi e arricchisce la wiki. Ci vuole qualche minuto."),
+    q,
+    status,
+    h("div", { class: "row end" },
+      h("button", { type: "button", class: "btn ghost", onclick: () => m.close() }, "Chiudi"),
+      go));
+    q.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) form.requestSubmit(); });
+    const m = modal(form, { onClose: () => onAskProgress(null) });
+    q.focus();
   }
 
   openAgenda() {
@@ -540,6 +588,7 @@ class App {
       { label: "Apri il grafo", key: "⌘G", run: () => this.openGraph("global") },
       { label: "Apri il grafo per anni", run: () => this.openGraph("global", null, "years") },
       { label: "Apri l'agenda", run: () => this.openAgenda() },
+      ...(canAsk() ? [{ label: "Chiedi alla wiki", run: () => this.askWiki() }] : []),
       { label: "Nuovo evento", run: () => this.newEvent() },
       { label: "Nuova todo (senza evento)", run: async () => {
         const r = await newTaskDialog();
