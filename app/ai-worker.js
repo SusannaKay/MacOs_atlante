@@ -69,6 +69,18 @@ const ANSWER_SCHEMA = {
   },
   required: ["risposta", "pagine_usate", "file_usati"],
 };
+const THEME_SCHEMA = {
+  type: "object",
+  properties: {
+    scarta: { type: "boolean" },
+    esistente: { type: "integer" },
+    titolo: { type: "string" },
+    descrizione: { type: "string" },
+    sintesi: { type: "string" },
+    membri: { type: "array", items: { type: "integer" } },
+  },
+  required: ["scarta", "esistente", "titolo", "descrizione", "sintesi", "membri"],
+};
 
 const ENTITY_RULE = "fino a 10 nomi specifici e distintivi (persone, aziende, enti, luoghi, progetti, opere, " +
   "pratiche, codici o numeri di contratto). Niente parole generiche come documento, file, pdf, foto, fattura, appunti.";
@@ -199,8 +211,8 @@ class AiWorker {
         // così la wiki cresce anche durante la prima lettura dell'archivio (che dura giorni)
         this.cycle = (this.cycle || 0) + 1;
         const steps = this.cycle % 5 === 0
-          ? [this.compileStep, this.profileStep, this.matchStep]
-          : [this.profileStep, this.matchStep, this.compileStep];
+          ? [this.compileStep, this.themeStep, this.profileStep, this.matchStep]
+          : [this.profileStep, this.matchStep, this.compileStep, this.themeStep];
         let did = false;
         for (const step of steps) {
           if (signal.aborted) break;
@@ -342,6 +354,46 @@ class AiWorker {
       },
     });
     this.status.last = { what: "wiki", title: res.title || name, at: Date.now() };
+    return true;
+  }
+
+  // ------------------------------------------------------------ 4. temi
+  async themeStep(signal) {
+    const { item: it } = await this.server("/wiki/theme/next");
+    if (!it) return false;
+    if (signal.aborted) return true;
+    const model = this.getConfig().aiModel;
+    this.set("running", `Cerco un tema intorno a «${it.members[0].title}»`);
+    const membri = it.members.map((m, i) => `${i + 1}. ${m.title}${m.descrizione ? " — " + m.descrizione : ""}` +
+      (m.sintesi ? `\n   ${m.sintesi}` : "")).join("\n");
+    const temi = it.themes.map((t, i) => `${i + 1}. ${t.title}${t.descrizione ? " — " + t.descrizione : ""}`).join("\n");
+    const r = await this.tolerant(() => this.chat(
+      "Queste pagine della wiki personale di Sus compaiono spesso negli stessi file. La prima è il centro del gruppo.\n\n" +
+      `PAGINE:\n${membri}\n\n` + (temi ? `TEMI GIÀ ESISTENTI:\n${temi}\n\n` : "") +
+      "Formano un tema, cioè un argomento della vita o del lavoro di Sus che le tiene insieme " +
+      "(es. «Casa e condominio», «Studi a 42», «Viaggio in Giappone 2024»)?\n" +
+      "Rispondi in JSON:\n" +
+      "- scarta: true se non c'è un argomento chiaro che le unisce (solo coincidenze), altrimenti false\n" +
+      "- esistente: il numero del tema già esistente che è proprio questo, oppure 0 se è un tema nuovo\n" +
+      "- titolo: nome del tema, breve (2-5 parole)\n" +
+      "- descrizione: una riga di massimo 15 parole\n" +
+      "- sintesi: 2-4 frasi su cosa riguarda il tema e come si collegano le pagine\n" +
+      "- membri: i numeri delle pagine che fanno davvero parte del tema (almeno 3, sempre compreso l'1)\n" +
+      "Usa solo quello che c'è scritto qui. Non inventare.",
+      THEME_SCHEMA, 12288), null);
+    const base = { seed: it.seed, model };
+    if (!r) {
+      await this.server("/wiki/theme", { method: "POST", body: { ...base, scarta: true } });
+      return true;
+    }
+    const membriSel = (r.membri || []).map((n) => it.members[Number(n) - 1]?.entity).filter(Boolean);
+    const esistente = Number(r.esistente) > 0 ? it.themes[Number(r.esistente) - 1]?.slug || "" : "";
+    const res = await this.server("/wiki/theme", {
+      method: "POST",
+      body: { ...base, scarta: Boolean(r.scarta), esistente, titolo: String(r.titolo || ""),
+        descrizione: String(r.descrizione || ""), sintesi: String(r.sintesi || ""), membri: membriSel },
+    });
+    if (res.written) this.status.last = { what: "tema", title: res.title, at: Date.now() };
     return true;
   }
 

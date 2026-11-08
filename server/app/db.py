@@ -97,6 +97,14 @@ CREATE TABLE IF NOT EXISTS wiki_sources (
 );
 CREATE INDEX IF NOT EXISTS wiki_sources_id ON wiki_sources(id);
 
+-- temi: pagine che raggruppano entità che compaiono negli stessi file (vault/wiki/temi/<slug>.md)
+CREATE TABLE IF NOT EXISTS wiki_themes (
+    slug TEXT PRIMARY KEY, title TEXT NOT NULL, descrizione TEXT, sintesi TEXT,
+    members TEXT, model TEXT, created REAL, updated REAL, locked INTEGER NOT NULL DEFAULT 0
+);
+-- entità già considerate come centro di un tema (o già finite in un tema)
+CREATE TABLE IF NOT EXISTS wiki_theme_seen (entity TEXT PRIMARY KEY, at REAL);
+
 -- todo delle note: "- [ ] cosa 📅 2026-10-25" (line = riga nel file, da 0)
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT NOT NULL, line INTEGER NOT NULL, text TEXT NOT NULL,

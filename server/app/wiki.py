@@ -32,7 +32,7 @@ router = APIRouter()
 HOOKS = {}
 
 ENT_DIR = "wiki/entita"
-SECTIONS = (("entita", "Entità"), ("temi", "Temi"), ("fonti", "Fonti"), ("risposte", "Risposte"))
+SECTIONS = (("entita", "Entità"), ("temi", "Temi"), ("risposte", "Risposte"))
 MIN_FILES = 3          # un'entità diventa una pagina quando compare in almeno 3 file
 BATCH = 8              # fonti nuove per ogni passaggio dell'LLM
 RELATED = 25           # pagine proposte all'LLM come possibili collegamenti

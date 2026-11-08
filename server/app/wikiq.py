@@ -1,4 +1,4 @@
-"""Wiki, seconda parte: le domande (wiki/risposte).
+"""Wiki, seconda parte: le domande (wiki/risposte) e i temi (wiki/temi).
 
 Come per le entità, il motore non chiama nessun modello: prepara il materiale e scrive i file,
 l'LLM gira sul Mac.
@@ -8,22 +8,31 @@ Domande
   2. l'app fa scegliere all'LLM le pagine utili, poi /api/wiki/ask/pages?ids= ne dà il testo
   3. l'LLM risponde e /api/wiki/answer salva la risposta in wiki/risposte/, con le fonti
 
+Temi
+  1. /api/wiki/theme/next  un gruppo di entità che compaiono spesso negli stessi file
+  2. l'LLM dice se formano un tema, come chiamarlo e quali ne fanno parte
+  3. /api/wiki/theme       scrive wiki/temi/<slug>.md con i link alle pagine
 """
+import json
 import os
 import re
+import time
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import notes
+from . import db, notes
 from .ai import get_con, is_generated
 from .config import VAULT_ROOT
-from .wiki import HOOKS, log, now_local, one_line, plain, save_note, write_index
+from .wiki import HOOKS, jl, log, now_local, one_line, plain, save_note, slug_for, touchable, write_index
 
 router = APIRouter()
 
 ANS_DIR = "wiki/risposte"
+THEME_DIR = "wiki/temi"
+MIN_PAGES_FOR_THEMES = 15   # sotto questo numero di pagine i temi non hanno senso
+THEME_NEIGHBOURS = 14       # entità vicine proposte all'LLM per un tema
 STOP = set("""il lo la i gli le un uno una di a da in con su per tra fra e o ma se che chi cosa come quando dove
 perché perche quale quali quanto quanti del dello della dei degli delle al allo alla ai agli alle dal dallo dalla dai
 dagli dalle nel nello nella nei negli nelle sul sullo sulla sui sugli sulle è e' sono ho hai ha abbiamo hanno mi ti
@@ -162,3 +171,118 @@ def answer(body: AnswerIn, con=Depends(get_con)):
     log(con, "domanda", q, rel)
     HOOKS["resolve_links"]()
     return {"id": iid}
+
+
+# ---------------------------------------------------------------- temi
+
+def theme_rel(slug):
+    return "%s/%s.md" % (THEME_DIR, slug)
+
+
+def live_pages(con):
+    return con.execute("SELECT count(*) FROM wiki_pages WHERE locked=0 AND title<>''").fetchone()[0]
+
+
+@router.get("/api/wiki/theme/next")
+def theme_next(con=Depends(get_con)):
+    if live_pages(con) < MIN_PAGES_FOR_THEMES:
+        return {"item": None}
+    seeds = con.execute(
+        "SELECT w.entity, w.title FROM wiki_pages w JOIN wiki_sources ws ON ws.entity=w.entity "
+        "LEFT JOIN wiki_theme_seen s ON s.entity=w.entity "
+        "WHERE w.locked=0 AND w.title<>'' AND s.entity IS NULL GROUP BY w.entity ORDER BY count(ws.id) DESC LIMIT 25").fetchall()
+    for seed in seeds:
+        rows = con.execute(
+            "SELECT w.entity, w.title, w.descrizione, w.sintesi, count(*) AS c FROM ai_entities e1 "
+            "JOIN ai_entities e2 ON e2.id=e1.id AND e2.entity<>e1.entity "
+            "JOIN wiki_pages w ON w.entity=e2.entity AND w.locked=0 AND w.title<>'' "
+            "WHERE e1.entity=? GROUP BY w.entity HAVING c>=2 ORDER BY c DESC LIMIT ?",
+            (seed["entity"], THEME_NEIGHBOURS)).fetchall()
+        if len(rows) < 3:  # troppo isolata per fare da centro a un tema
+            with db.writing(con):
+                con.execute("INSERT OR IGNORE INTO wiki_theme_seen(entity, at) VALUES(?,?)", (seed["entity"], time.time()))
+            continue
+        me = con.execute("SELECT entity, title, descrizione, sintesi FROM wiki_pages WHERE entity=?", (seed["entity"],)).fetchone()
+        members = [dict(me)] + [dict(r) for r in rows]
+        themes = [{"slug": r["slug"], "title": r["title"], "descrizione": r["descrizione"] or ""}
+                  for r in con.execute("SELECT slug, title, descrizione FROM wiki_themes WHERE locked=0 ORDER BY title")]
+        return {"item": {"seed": seed["entity"], "members": [
+            {"entity": m["entity"], "title": m["title"], "descrizione": one_line(m["descrizione"] or "", 160),
+             "sintesi": one_line(m["sintesi"] or "", 300)} for m in members], "themes": themes}}
+    return {"item": None}
+
+
+class ThemeIn(BaseModel):
+    seed: str
+    model: str = ""
+    scarta: bool = False
+    esistente: str = ""          # slug di un tema già scritto a cui aggiungere i membri
+    titolo: str = ""
+    descrizione: str = ""
+    sintesi: str = ""
+    membri: list[str] = []       # entità
+
+
+def render_theme(con, t, members):
+    pages = []
+    for e in members:
+        r = con.execute("SELECT slug, title, descrizione FROM wiki_pages WHERE entity=? AND locked=0 AND title<>''", (e,)).fetchone()
+        if r:
+            pages.append(r)
+    pages.sort(key=lambda r: r["title"].lower())
+    fm = {"titolo": t["title"], "tipo": "tema", "descrizione": t["descrizione"], "tag": ["wiki", "tema"],
+          "aggiornato": now_local().date().isoformat(), "generato": "atlante", "modello": t["model"]}
+    out = ["---", yaml.safe_dump(fm, allow_unicode=True, sort_keys=False, width=1000).strip(), "---", "",
+           "# " + t["title"], ""]
+    if t["sintesi"]:
+        out += [t["sintesi"], ""]
+    out += ["## Pagine", ""]
+    out += ["- [[%s|%s]]%s" % (r["slug"], r["title"], (" — " + one_line(r["descrizione"], 160)) if r["descrizione"] else "")
+            for r in pages]
+    return "\n".join(out).rstrip() + "\n"
+
+
+@router.post("/api/wiki/theme")
+def theme_save(body: ThemeIn, con=Depends(get_con)):
+    now = time.time()
+    known = {r[0] for r in con.execute("SELECT entity FROM wiki_pages WHERE locked=0 AND title<>''")}
+    members = [m for m in dict.fromkeys([body.seed] + list(body.membri)) if m in known]
+    with db.writing(con):  # il centro non riparte più, e nemmeno chi è finito in un tema
+        con.executemany("INSERT OR IGNORE INTO wiki_theme_seen(entity, at) VALUES(?,?)",
+                        [(e, now) for e in ([body.seed] + (members if not body.scarta else []))])
+    if body.scarta or len(members) < 3:
+        return {"ok": True, "written": None}
+
+    old = None
+    if body.esistente:
+        old = con.execute("SELECT * FROM wiki_themes WHERE slug=? AND locked=0", (body.esistente,)).fetchone()
+    if old:
+        slug = old["slug"]
+        members = list(dict.fromkeys(jl(old["members"]) + members))
+        t = {"title": old["title"], "descrizione": old["descrizione"] or "", "sintesi": old["sintesi"] or "", "model": old["model"]}
+    else:
+        title = one_line(body.titolo, 80)
+        if not title:
+            return {"ok": True, "written": None}
+        base = slug_for(title)
+        slug, n = base, 1
+        while con.execute("SELECT 1 FROM wiki_themes WHERE slug=?", (slug,)).fetchone() or not touchable(theme_rel(slug)):
+            n += 1
+            slug = "%s-%d" % (base, n)
+        t = {"title": title, "descrizione": one_line(body.descrizione, 200), "sintesi": plain(body.sintesi)[:1500],
+             "model": body.model}
+    if not touchable(theme_rel(slug)):
+        with db.writing(con):
+            con.execute("UPDATE wiki_themes SET locked=1 WHERE slug=?", (slug,))
+        return {"ok": True, "written": None}
+    with db.writing(con):
+        con.execute(
+            "INSERT INTO wiki_themes(slug, title, descrizione, sintesi, members, model, created, updated, locked) "
+            "VALUES(?,?,?,?,?,?,?,?,0) ON CONFLICT(slug) DO UPDATE SET members=excluded.members, updated=excluded.updated",
+            (slug, t["title"], t["descrizione"], t["sintesi"], json.dumps(members), t["model"], now, now))
+    rel = theme_rel(slug)
+    save_note(con, rel, render_theme(con, t, members))
+    write_index(con)
+    log(con, "tema", "%s «%s» (%d pagine)" % ("aggiornato" if old else "nuovo tema", t["title"], len(members)), rel)
+    HOOKS["resolve_links"]()
+    return {"ok": True, "written": "n:" + rel, "title": t["title"]}

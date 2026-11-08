@@ -84,6 +84,7 @@ With Ollama running on the Mac, the app analyses your files in the background:
 1. **Profile**: extracts people, places, organizations and projects from each file, plus a short summary
 2. **Match**: finds files that share entities and asks the model whether the connection is real
 3. **Compile**: writes a wiki page for every entity that appears in at least 3 files
+4. **Themes**: once there are enough pages, groups entities that keep showing up in the same files into theme pages (`wiki/temi/`), like "House and condo" or "Studies at 42"
 
 Suggested links show up as dashed edges in the graph and in a Suggestions panel. Links the model is at least 80% sure about become real links on their own (`auto_accept` in `config.yaml`); the others wait for you.
 
@@ -204,7 +205,7 @@ atlante/
 │   │   ├── notes.py         vault: links, tags, frontmatter
 │   │   ├── ai.py            queue and storage for the AI analysis
 │   │   ├── wiki.py          compiled wiki pages, index.md, log.md
-│   │   ├── wikiq.py         questions to the wiki
+│   │   ├── wikiq.py         questions to the wiki and theme pages
 │   │   ├── agenda.py        events, to-dos, event template, sync manifest
 │   │   └── config.py
 │   ├── config.yaml          folders to skip, scan interval
