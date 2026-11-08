@@ -356,9 +356,9 @@ class Indexer:
             con.execute("UPDATE items SET meta_year=?, enriched=1 WHERE id=?", (info["year"], nid))
             recompute_year(con, nid)
 
-    def resolve(self, target):
+    def resolve(self, target, con=None):
         """Trova l'elemento a cui punta [[target]]."""
-        con = self.con
+        con = con or self.con
         t = target.strip()
         if t.startswith("/"):  # percorso esplicito sul server: [[/books/libro.epub]]
             r = con.execute("SELECT id FROM items WHERE id=?", ("s:" + t.strip("/"),)).fetchone()
@@ -384,12 +384,17 @@ class Indexer:
         return r["id"] if r else None
 
     def resolve_links(self):
-        con = self.con
-        rows = con.execute("SELECT DISTINCT target_raw FROM links").fetchall()
-        mapping = {r["target_raw"]: self.resolve(r["target_raw"]) for r in rows}
-        with db.writing(con):
-            con.executemany("UPDATE links SET target_id=? WHERE target_raw=?",
-                            [(v, k) for k, v in mapping.items()])
+        # connessione propria: la chiamano anche le richieste e la wiki da altri thread,
+        # mentre la scansione usa self.con (sqlite non vuole due thread sulla stessa connessione)
+        con = db.connect()
+        try:
+            rows = con.execute("SELECT DISTINCT target_raw FROM links").fetchall()
+            mapping = {r["target_raw"]: self.resolve(r["target_raw"], con) for r in rows}
+            with db.writing(con):
+                con.executemany("UPDATE links SET target_id=? WHERE target_raw=?",
+                                [(v, k) for k, v in mapping.items()])
+        finally:
+            con.close()
 
     # -- arricchimento in background (testo dei PDF, anni dai metadati)
 
