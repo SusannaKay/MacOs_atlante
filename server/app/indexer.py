@@ -352,6 +352,7 @@ class Indexer:
             if r:
                 con.execute("INSERT INTO items_fts(id,name,rel,body) VALUES(?,?,?,?)",
                             (nid, r["name"], r["rel"], info["body"][:CFG["text_max_chars"]]))
+            con.execute("UPDATE items SET textlen=? WHERE id=?", (len(info["body"].strip()), nid))
             con.execute("UPDATE items SET meta_year=?, enriched=1 WHERE id=?", (info["year"], nid))
             recompute_year(con, nid)
 
@@ -419,7 +420,8 @@ class Indexer:
                 except Exception:
                     log.debug("estrazione fallita per %s", r["id"], exc_info=True)
                 with db.writing(con):
-                    con.execute("UPDATE items SET enriched=1, meta_year=? WHERE id=?", (year, r["id"]))
+                    con.execute("UPDATE items SET enriched=1, meta_year=?, textlen=? WHERE id=?",
+                                (year, len((body or "").strip()), r["id"]))
                     if body:
                         row = con.execute("SELECT name, rel FROM items WHERE id=?", (r["id"],)).fetchone()
                         con.execute("DELETE FROM items_fts WHERE id=?", (r["id"],))

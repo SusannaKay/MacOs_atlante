@@ -14,14 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import agenda, ai, db, notes, wiki, wikiq
+from . import agenda, ai, db, notes, wiki, wikiq, wikirule
 from .config import CFG, DATA_DIR, TOKEN, VAULT_ROOT
 from .indexer import Indexer, abs_path, item_id, kind_for, parent_of, recompute_year, split_name
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("atlante")
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 
 
 @asynccontextmanager
@@ -70,6 +70,7 @@ def startup():
     threading.Thread(target=agenda.reindex_tasks_once, args=(INDEXER.index_note,), daemon=True).start()
     wiki.HOOKS.update(register=register_vault_file, index_note=INDEXER.index_note,
                       resolve_links=INDEXER.resolve_links, link_name=link_name_for)
+    wikirule.start()  # regola delle pagine: doppioni, pulizia, collezioni
 
 
 @app.middleware("http")

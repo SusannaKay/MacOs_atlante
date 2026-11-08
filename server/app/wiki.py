@@ -32,7 +32,7 @@ router = APIRouter()
 HOOKS = {}
 
 ENT_DIR = "wiki/entita"
-SECTIONS = (("entita", "Entità"), ("temi", "Temi"), ("risposte", "Risposte"))
+SECTIONS = (("entita", "Entità"), ("temi", "Temi"), ("collezioni", "Collezioni"), ("risposte", "Risposte"))
 MIN_FILES = 3          # un'entità diventa una pagina quando compare in almeno 3 file
 BATCH = 8              # fonti nuove per ogni passaggio dell'LLM
 RELATED = 25           # pagine proposte all'LLM come possibili collegamenti
@@ -121,9 +121,10 @@ JOIN items i ON i.id = e.id
 JOIN ai_profiles p ON p.id = e.id AND p.mtime = i.mtime
 LEFT JOIN wiki_sources ws ON ws.entity = e.entity AND ws.id = e.id
 LEFT JOIN wiki_pages w ON w.entity = e.entity
+LEFT JOIN wiki_skip sk ON sk.entity = e.entity
 WHERE p.summary <> '' AND coalesce(w.locked, 0) = 0 AND NOT {gen}
 GROUP BY e.entity
-HAVING n >= ? AND n <= ? AND fresh > 0
+HAVING n >= ? AND n <= ? AND fresh > 0 AND (max(sk.sources) IS NULL OR n > max(sk.sources))
 ORDER BY (max(w.updated) IS NOT NULL), n DESC
 LIMIT 1
 """.format(gen=generated_sql("i.id"))
@@ -174,12 +175,21 @@ def related_pages(con, entity):
 
 @router.get("/api/wiki/next")
 def wiki_next(con=Depends(get_con)):
-    for _ in range(10):
+    from . import wikirule
+    wikirule.rebuild_collections(con)
+    for _ in range(40):
         row = con.execute(PICK, (MIN_FILES, COMMON_ENTITY)).fetchone()
         if not row:
             return {"item": None}
         ent = row["entity"]
         page = con.execute("SELECT * FROM wiki_pages WHERE entity=?", (ent,)).fetchone()
+        if not (page and page["title"]):  # le pagine nuove solo se passano la regola (vedi wikirule)
+            ok, _, folder = wikirule.judge(con, ent)
+            if not ok:
+                wikirule.skip(con, ent, row["n"], folder)
+                continue
+            with db.writing(con):
+                con.execute("DELETE FROM wiki_skip WHERE entity=?", (ent,))
         if page and page["slug"] and not touchable(page_rel(page["slug"])):
             lock(con, ent)  # bloccata o riscritta a mano: da ora in poi la lascio stare
             continue
@@ -226,7 +236,15 @@ def all_sources(con, entity):
         "WHERE ws.entity=? ORDER BY coalesce(i.year, 0) DESC, i.name", (entity,)).fetchall()
 
 
-def render(con, page, sources, related):
+def themes_of(con, entity):
+    out = []
+    for t in con.execute("SELECT slug, title, members FROM wiki_themes WHERE locked=0 ORDER BY title"):
+        if entity in jl(t["members"]):
+            out.append(t)
+    return out
+
+
+def render(con, page, sources, related, entity=None):
     fonti = [(VAULT_LABEL + "/" if s["src"] == "n" else STORAGE_LABEL + "/") + s["rel"] for s in sources]
     fm = {
         "titolo": page["title"],
@@ -247,6 +265,9 @@ def render(con, page, sources, related):
         out += [page["dettagli"], ""]
     if page["verificare"]:
         out += ["## Da verificare", ""] + ["- " + v for v in page["verificare"]] + [""]
+    themes = themes_of(con, entity) if entity else []
+    if themes:
+        out += ["## Temi", ""] + ["- [[%s|%s]]" % (t["slug"], t["title"]) for t in themes] + [""]
     if related:
         out += ["## Collegamenti", ""] + ["- [[%s|%s]]" % (r["slug"], r["title"]) for r in related] + [""]
     out += ["## Fonti", ""]
@@ -385,7 +406,7 @@ def wiki_page(body: PageIn, con=Depends(get_con)):
         con.executemany("INSERT OR IGNORE INTO wiki_sources(entity, id, added) VALUES(?,?,?)",
                         [(ent, i, now) for i in ids])
 
-    text = render(con, data, all_sources(con, ent), related)
+    text = render(con, data, all_sources(con, ent), related, ent)
     save_note(con, rel, text)
     write_index(con)
     log(con, "ingest", "%s «%s» (+%d fonti)" % ("aggiornata" if page and page["title"] else "nuova pagina",
@@ -394,9 +415,32 @@ def wiki_page(body: PageIn, con=Depends(get_con)):
     return {"ok": True, "written": "n:" + rel, "title": data["title"]}
 
 
+def rerender(con, entity):
+    """Riscrive una pagina dal database (senza LLM): dopo un tema nuovo, un doppione unito, una pulizia."""
+    page = con.execute("SELECT * FROM wiki_pages WHERE entity=? AND locked=0 AND title<>''", (entity,)).fetchone()
+    if not page or not page["slug"] or not touchable(page_rel(page["slug"])):
+        return False
+    related = []
+    for e in jl(page["related"]):
+        if e == entity:
+            continue
+        r = con.execute("SELECT entity, slug, title FROM wiki_pages WHERE entity=? AND locked=0 AND title<>''",
+                        (e,)).fetchone()
+        if r:
+            related.append(dict(r))
+    related.sort(key=lambda r: r["title"].lower())
+    data = {"title": page["title"], "descrizione": page["descrizione"] or "", "sintesi": page["sintesi"] or "",
+            "dettagli": page["dettagli"] or "", "verificare": jl(page["verificare"]), "alias": jl(page["alias"]),
+            "tags": jl(page["tags"]), "model": page["model"]}
+    save_note(con, page_rel(page["slug"]), render(con, data, all_sources(con, entity), related, entity))
+    return True
+
+
 @router.get("/api/wiki/stats")
 def wiki_stats(con=Depends(get_con)):
     q = lambda s, *a: con.execute(s, a).fetchone()[0]  # noqa: E731
     return {"pages": q("SELECT count(*) FROM wiki_pages WHERE locked=0 AND title<>''"),
             "locked": q("SELECT count(*) FROM wiki_pages WHERE locked=1"),
-            "sources": q("SELECT count(DISTINCT id) FROM wiki_sources")}
+            "sources": q("SELECT count(DISTINCT id) FROM wiki_sources"),
+            "collections": q("SELECT count(*) FROM wiki_collections"),
+            "skipped": q("SELECT count(*) FROM wiki_skip")}

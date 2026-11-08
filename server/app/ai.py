@@ -55,10 +55,29 @@ def get_con():
         con.close()
 
 
+# numerazioni che non sono argomenti: «Volume 1», «Capitolo 12», «Parte 2»…
+NUMBERING_RE = re.compile(r"^(volume|vol|capitolo|cap|chapter|episodio|ep|episode|parte|part|puntata|stagione|season|"
+                          r"disco|disc|cd|traccia|track|pagina|pag|page|numero|n|no|tomo|libro|book)\s*\d+$")
+
+
+# doppioni già uniti: entità -> entità che la sostituisce (lo riempie wikirule all'avvio)
+ENTITY_ALIAS: dict = {}
+
+
 def norm_entity(e: str) -> str:
+    """Forma canonica di un'entità: minuscole, senza accenti né punteggiatura. Stringa vuota per le
+    numerazioni («Volume 1»); gli anni restano. I doppioni con le parole in un altro ordine li unisce wikirule."""
     e = unicodedata.normalize("NFKD", str(e)).encode("ascii", "ignore").decode().lower()
     e = re.sub(r"[^\w\s]", " ", e)
-    return re.sub(r"\s+", " ", e).strip()
+    e = re.sub(r"\s+", " ", e).strip()
+    if NUMBERING_RE.match(e) or (e.isdigit() and len(e) != 4):  # gli anni (4 cifre) restano
+        return ""
+    return e
+
+
+def entity_key(e: str) -> str:
+    """Chiave per riconoscere i doppioni: «susanna kayed» e «kayed susanna» hanno la stessa."""
+    return " ".join(sorted(norm_entity(e).split()))
 
 
 def pair(x, y):
@@ -132,7 +151,7 @@ def save_profiles(body: Profiles, con=Depends(get_con)):
             con.execute("INSERT OR REPLACE INTO ai_profiles(id, summary, model, created, mtime) VALUES(?,?,?,?,?)",
                         (p.id, p.summary.strip()[:600], body.model, now, r["mtime"]))
             con.execute("DELETE FROM ai_entities WHERE id=?", (p.id,))
-            ents = {norm_entity(e) for e in p.entities[:15]}
+            ents = {ENTITY_ALIAS.get(x, x) for x in (norm_entity(e) for e in p.entities[:15])}
             con.executemany("INSERT OR IGNORE INTO ai_entities(id, entity) VALUES(?,?)",
                             [(p.id, e) for e in ents if 3 <= len(e) <= 80])
             con.execute("DELETE FROM ai_match WHERE id=?", (p.id,))  # da riabbinare

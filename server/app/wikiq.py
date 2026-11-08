@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from . import db, notes
 from .ai import get_con, is_generated
 from .config import VAULT_ROOT
-from .wiki import HOOKS, jl, log, now_local, one_line, plain, save_note, slug_for, touchable, write_index
+from .wiki import HOOKS, jl, log, now_local, one_line, plain, rerender, save_note, slug_for, touchable, write_index
 
 router = APIRouter()
 
@@ -282,6 +282,8 @@ def theme_save(body: ThemeIn, con=Depends(get_con)):
             (slug, t["title"], t["descrizione"], t["sintesi"], json.dumps(members), t["model"], now, now))
     rel = theme_rel(slug)
     save_note(con, rel, render_theme(con, t, members))
+    for m in members:  # ogni pagina del tema mostra il tema nella sezione «Temi»
+        rerender(con, m)
     write_index(con)
     log(con, "tema", "%s «%s» (%d pagine)" % ("aggiornato" if old else "nuovo tema", t["title"], len(members)), rel)
     HOOKS["resolve_links"]()

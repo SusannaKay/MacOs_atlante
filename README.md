@@ -83,8 +83,8 @@ With Ollama running on the Mac, the app analyses your files in the background:
 
 1. **Profile**: extracts people, places, organizations and projects from each file, plus a short summary
 2. **Match**: finds files that share entities and asks the model whether the connection is real
-3. **Compile**: writes a wiki page for every entity that appears in at least 3 files
-4. **Themes**: once there are enough pages, groups entities that keep showing up in the same files into theme pages (`wiki/temi/`), like "House and condo" or "Studies at 42"
+3. **Compile**: writes a wiki page for every entity that appears in at least 3 files and has something to say: at least 2 sources with real text (notes, documents, PDFs), or 1 with text plus files in at least 2 different places of the archive. Entities that only show up in file names (a folder of ROMs, films, scans) are grouped into one collection page per folder (`wiki/collezioni/`) instead of one page each, and get their own page later if they turn up in a note or a document. Duplicates such as "Kayed Susanna" and "Susanna Kayed" are merged
+4. **Themes**: once there are enough pages, groups entities that keep showing up in the same files into theme pages (`wiki/temi/`), like "House and condo" or "Studies at 42". Each page links back to its themes
 
 Suggested links show up as dashed edges in the graph and in a Suggestions panel. Links the model is at least 80% sure about become real links on their own (`auto_accept` in `config.yaml`); the others wait for you.
 
@@ -206,6 +206,7 @@ atlante/
 │   │   ├── ai.py            queue and storage for the AI analysis
 │   │   ├── wiki.py          compiled wiki pages, index.md, log.md
 │   │   ├── wikiq.py         questions to the wiki and theme pages
+│   │   ├── wikirule.py      which entities get a page, collections, duplicates
 │   │   ├── agenda.py        events, to-dos, event template, sync manifest
 │   │   └── config.py
 │   ├── config.yaml          folders to skip, scan interval

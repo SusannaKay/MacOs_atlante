@@ -102,6 +102,19 @@ CREATE TABLE IF NOT EXISTS wiki_themes (
     slug TEXT PRIMARY KEY, title TEXT NOT NULL, descrizione TEXT, sintesi TEXT,
     members TEXT, model TEXT, created REAL, updated REAL, locked INTEGER NOT NULL DEFAULT 0
 );
+-- entità che non meritano una pagina (poche fonti con testo, tutte nello stesso posto):
+-- finiscono nelle pagine di collezione; si ricontrollano quando arrivano nuove fonti
+CREATE TABLE IF NOT EXISTS wiki_skip (
+    entity TEXT PRIMARY KEY, sources INTEGER NOT NULL DEFAULT 0, title TEXT, folder TEXT, at REAL
+);
+-- doppioni uniti: «kayed susanna» -> «susanna kayed»
+CREATE TABLE IF NOT EXISTS entity_alias (alias TEXT PRIMARY KEY, entity TEXT NOT NULL);
+-- piccoli stati della wiki (es. pulizia già fatta)
+CREATE TABLE IF NOT EXISTS wiki_state (key TEXT PRIMARY KEY, value TEXT);
+-- pagine di collezione: una per cartella piena di file "solo nome" (ROM, film, ebook…)
+CREATE TABLE IF NOT EXISTS wiki_collections (
+    slug TEXT PRIMARY KEY, folder TEXT UNIQUE, title TEXT, members TEXT, updated REAL
+);
 -- entità già considerate come centro di un tema (o già finite in un tema)
 CREATE TABLE IF NOT EXISTS wiki_theme_seen (entity TEXT PRIMARY KEY, at REAL);
 
@@ -130,6 +143,9 @@ def init():
     con = connect()
     with WRITE_LOCK:
         con.executescript(SCHEMA)
+        cols = {r[1] for r in con.execute("PRAGMA table_info(items)")}
+        if "textlen" not in cols:  # lunghezza del testo estratto: serve alla wiki per distinguere i file "solo nome"
+            con.execute("ALTER TABLE items ADD COLUMN textlen INTEGER")
         con.commit()
     con.close()
 
