@@ -780,9 +780,8 @@ class App {
             (s.wiki != null ? ` Pagine nella wiki: ${s.wiki}.` : "") : "");
       };
       aiStatus().then((st) => this.settingsAi?.(st));
-      aiBox = h("fieldset", { class: "settings-ai" },
-        h("legend", {}, "Collegamenti automatici con Ollama"),
-        h("p", { class: "muted small" }, "L'app legge i file del server con un modello sul tuo Mac e propone collegamenti da approvare. Funziona mentre Atlante è aperta; niente esce da casa."),
+      aiBox = h("div", { class: "settings-ai" },
+        h("p", { class: "muted small" }, "Con un modello di Ollama sul tuo Mac, Atlante legge i tuoi file, propone collegamenti, scrive la wiki e risponde alle domande. Funziona mentre l'app è aperta; niente esce dal Mac e dal tuo server."),
         h("label", { class: "check" }, aiOn, "Attiva l'analisi"),
         h("label", {}, "Modello", aiModel),
         h("label", { class: "check" }, aiBattery, "Metti in pausa quando il Mac va a batteria"),
@@ -804,6 +803,24 @@ class App {
       }
     };
     const testBtn = h("button", { type: "button", class: "btn ghost", onclick: test }, "Prova il collegamento");
+    // due schede, così la finestra non deve scorrere: «Generale» e «Analisi AI»
+    const generalPane = h("div", { class: "settings-pane" },
+      radios ? h("p", { class: "muted small" }, "Dove sono i file da organizzare?") : null,
+      radios, serverBox, localBox,
+      h("label", {}, "Tema", theme));
+    const aiPane = aiBox && !first ? h("div", { class: "settings-pane", hidden: true }, aiBox) : null;
+    const tabsBar = aiPane ? h("div", { class: "settings-tabs", role: "tablist" },
+      ...[["Generale", generalPane], ["Analisi AI", aiPane]].map(([label, pane], i) => h("button", {
+        type: "button", role: "tab", class: "settings-tab" + (i === 0 ? " on" : ""), "aria-selected": i === 0 ? "true" : "false",
+        onclick: (e) => {
+          tabsBar.querySelectorAll(".settings-tab").forEach((b) => { b.classList.remove("on"); b.setAttribute("aria-selected", "false"); });
+          e.currentTarget.classList.add("on");
+          e.currentTarget.setAttribute("aria-selected", "true");
+          generalPane.hidden = pane !== generalPane;
+          aiPane.hidden = pane !== aiPane;
+          testBtn.hidden = pane !== generalPane || mode !== "server";
+        },
+      }, label))) : null;
     const saveBtn = h("button", { type: "submit", class: "btn primary" }, "Salva");
     const aiPart = () => (aiBox ? { aiEnabled: aiOn.checked && Boolean(aiModel.value), aiModel: aiModel.value, aiBattery: aiBattery.checked } : {});
     const showErr = (err) => {
@@ -850,15 +867,12 @@ class App {
       },
     },
     h("h2", {}, first ? "Configura Atlante" : "Impostazioni"),
-    radios ? h("p", { class: "muted small" }, "Dove sono i file da organizzare?") : null,
-    radios,
-    serverBox,
-    localBox,
-    h("label", {}, "Tema", theme),
-    aiBox,
+    tabsBar,
+    generalPane,
+    aiPane,
     msg,
     h("div", { class: "row end" }, testBtn, saveBtn));
-    const m = modal(form, { onClose: () => { this.settingsOpen = false; this.settingsEngine = null; } });
+    const m = modal(form, { wide: true, onClose: () => { this.settingsOpen = false; this.settingsEngine = null; } });
     showMode();
     (first ? (mode === "server" ? url : saveBtn) : theme).focus();
     theme.addEventListener("change", () => { document.documentElement.dataset.theme = theme.value; if (theme.value === "auto") document.documentElement.removeAttribute("data-theme"); });

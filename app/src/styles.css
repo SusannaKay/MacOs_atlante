@@ -533,7 +533,7 @@ button.link:hover { background: var(--bg-hover); }
 }
 .modal {
   background: var(--bg-elev); border: 1px solid var(--line); border-radius: 12px;
-  box-shadow: var(--shadow); width: min(440px, 92vw); max-height: 70vh; overflow: auto;
+  box-shadow: var(--shadow); width: min(440px, 92vw); max-height: calc(100vh - 48px); overflow: auto;
 }
 .modal.wide { width: min(640px, 94vw); }
 .prompt, .settings { padding: 20px 22px; display: flex; flex-direction: column; gap: 10px; }
@@ -729,3 +729,15 @@ button.link:hover { background: var(--bg-hover); }
   background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-s);
 }
 .ask-form textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 -22px 2px; padding: 0 22px; }
+.settings-tab {
+  border: 0; background: none; color: var(--text-muted); font: inherit; font-size: 13px; padding: 7px 10px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer;
+}
+.settings-tab:hover { color: var(--text); }
+.settings-tab.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.settings-pane { display: flex; flex-direction: column; gap: 10px; }
+.settings-pane[hidden] { display: none; }
+.settings-ai { display: flex; flex-direction: column; gap: 10px; }
+.settings-pane .settings-ai { border: 0; padding: 0; margin: 0; background: none; }
