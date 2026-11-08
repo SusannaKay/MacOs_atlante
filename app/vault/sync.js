@@ -13,6 +13,9 @@ const crypto = require("crypto");
 
 const MAX_BYTES = 25 * 1024 * 1024; // file più grandi restano solo sul server
 const TIMEOUT = 20_000;
+// file che scrive il motore (wiki, indice, log): se il server li toglie, li tolgo anche dalla copia
+const isGenerated = (rel) => rel.startsWith("wiki/") || rel === "index.md" || rel === "log.md";
+
 const isNote = (rel) => /\.(md|markdown)$/i.test(rel);
 const sha1 = (buf) => crypto.createHash("sha1").update(buf).digest("hex");
 const same = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-3;
@@ -148,6 +151,7 @@ class VaultSync {
       let goneLocal = 0;
       let goneServer = 0;
       for (const rel of Object.keys(this.state.files)) {
+        if (isGenerated(rel)) continue; // le pagine della wiki le cancella il motore da solo: non contano
         if (!local.has(rel)) goneLocal++;
         if (!server.has(rel)) goneServer++;
       }
@@ -206,7 +210,7 @@ class VaultSync {
     }
     if (l && !s) {
       if (st && !lChanged) { // cancellato sul server
-        if (noDelete) return undefined;
+        if (noDelete && !isGenerated(rel)) return undefined;
         fs.rmSync(this.local.abs(rel), { force: true });
         delete this.state.files[rel];
         return undefined;
