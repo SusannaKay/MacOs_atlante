@@ -178,12 +178,44 @@ function applyAi(cfg) {
   else worker.stop();
 }
 ipcMain.handle("ai:status", () => worker.status);
-ipcMain.handle("ai:ask", async (e, question) => {
+// ---- domande alla wiki: una coda, una domanda alla volta, che continua anche se chiudi la scheda
+const askJobs = [];
+let askBusy = false;
+const sendJobs = () => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("ai-ask-jobs", askJobs));
+async function runAsk() {
+  if (askBusy) return;
+  const job = [...askJobs].reverse().find((j) => j.state === "queued"); // la più vecchia in coda
+  if (!job) return;
+  askBusy = true;
+  Object.assign(job, { state: "running", step: 1, message: "Cerco nella wiki…", started: Date.now() });
+  sendJobs();
   try {
-    return { ok: true, id: await worker.ask(String(question || "").trim(), (msg) => e.sender.send("ai-ask-progress", msg)) };
+    job.noteId = await worker.ask(job.question, (message, step) => { Object.assign(job, { message, step: step || job.step }); sendJobs(); });
+    Object.assign(job, { state: "done", step: job.steps, message: "Risposta pronta" });
   } catch (err) {
-    return { ok: false, error: err.message };
+    Object.assign(job, { state: "error", message: err.message });
+  } finally {
+    job.finished = Date.now();
+    askBusy = false;
+    sendJobs();
+    runAsk();
   }
+}
+ipcMain.handle("ai:ask", (_e, question) => {
+  const q = String(question || "").trim();
+  if (!q) return null;
+  const job = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, question: q, state: "queued", step: 0, steps: 4,
+    message: "In coda", created: Date.now() };
+  askJobs.unshift(job);
+  sendJobs();
+  runAsk();
+  return job;
+});
+ipcMain.handle("ai:ask-jobs", () => askJobs);
+ipcMain.handle("ai:ask-clear", () => {
+  for (let i = askJobs.length - 1; i >= 0; i--) if (["done", "error"].includes(askJobs[i].state)) askJobs.splice(i, 1);
+  sendJobs();
+  return askJobs;
 });
 ipcMain.handle("ai:models", async () => {
   try {

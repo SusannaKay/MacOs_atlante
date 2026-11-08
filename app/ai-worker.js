@@ -404,13 +404,13 @@ class AiWorker {
     if (!c.aiModel) throw new Error("Scegli un modello di Ollama nelle Impostazioni.");
     try { await this.models(); } catch { throw new Error("Ollama non è acceso: aprilo e riprova."); }
     const signal = AbortSignal.timeout(900_000);
-    progress("Cerco nella wiki…");
+    progress("Cerco nella wiki…", 1);
     const cand = await this.server("/wiki/ask/candidates?q=" + encodeURIComponent(question));
     if (!cand.pages.length && !cand.files.length) throw new Error("Non trovo niente nella wiki e nei file su questa domanda.");
     const pagine = cand.pages.map((p, i) => `${i + 1}. ${p.title}${p.descrizione ? " — " + p.descrizione : ""}`).join("\n");
     const files = cand.files.map((f, i) => `${i + 1}. ${f.path}${f.year ? ` (${f.year})` : ""}${f.summary ? " — " + f.summary : ""}`).join("\n");
 
-    progress("Scelgo le pagine utili…");
+    progress("Scelgo le pagine utili…", 2);
     const pick = await this.chat(
       `Domanda di Sus: «${question}»\n\n` +
       (pagine ? `PAGINE DELLA WIKI:\n${pagine}\n\n` : "") + (files ? `FILE DELL'ARCHIVIO:\n${files}\n\n` : "") +
@@ -420,7 +420,7 @@ class AiWorker {
     const chosenFiles = [...new Set((pick.file || []).map((n) => cand.files[Number(n) - 1]).filter(Boolean))].slice(0, 4);
     if (!pages.length && !chosenFiles.length) throw new Error("La wiki non contiene ancora niente di utile per questa domanda.");
 
-    progress(`Leggo ${pages.length + chosenFiles.length} fonti e scrivo la risposta…`);
+    progress(`Leggo ${pages.length + chosenFiles.length} fonti e scrivo la risposta…`, 3);
     const full = pages.length ? (await this.server("/wiki/ask/pages?ids=" + encodeURIComponent(pages.map((p) => p.id).join("|")))).pages : [];
     const fonti = [
       ...full.map((p, i) => `[P${i + 1}] Pagina «${p.title}»\n${p.text}`),
@@ -436,7 +436,7 @@ class AiWorker {
     if (!text) throw new Error("Il modello non ha risposto. Riprova, magari con una domanda più precisa.");
     const usedPages = (ans.pagine_usate || []).map((n) => full[Number(n) - 1]?.id).filter(Boolean);
     const usedFiles = (ans.file_usati || []).map((n) => chosenFiles[Number(n) - 1]?.id).filter(Boolean);
-    progress("Salvo la risposta…");
+    progress("Salvo la risposta…", 4);
     const r = await this.server("/wiki/answer", {
       method: "POST",
       body: { question, answer: text, model: c.aiModel,

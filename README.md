@@ -88,7 +88,7 @@ With Ollama running on the Mac, the app analyses your files in the background:
 
 Suggested links show up as dashed edges in the graph and in a Suggestions panel. Links the model is at least 80% sure about become real links on their own (`auto_accept` in `config.yaml`); the others wait for you.
 
-**Ask the wiki** (the speech bubble in the sidebar, or ⌘P → *Chiedi alla wiki*): ask a question in plain words. The model picks the relevant wiki pages and file summaries, answers using only those, and the answer is saved in `wiki/risposte/` with links to its sources, so the wiki grows with your questions too.
+**Ask the wiki** (the speech bubble in the sidebar, or ⌘P → *Chiedi alla wiki*): ask a question in plain words. The model picks the relevant wiki pages and file summaries, answers using only those, and the answer is saved in `wiki/risposte/` with links to its sources, so the wiki grows with your questions too. Questions queue up and run one at a time, each with its own progress bar, and keep going if you close the tab.
 
 The wiki follows Andrej Karpathy's "LLM Wiki" idea: instead of a database-backed knowledge graph, the LLM maintains a folder of plain Markdown pages in `vault/wiki/`. Each page has a summary, key facts, things to double-check, links to related pages and the list of sources. Pages get updated as new files arrive, not rewritten from scratch. A few rules keep it sane:
 

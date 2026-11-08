@@ -1,7 +1,7 @@
 // Atlante — struttura dell'app: barra laterale, schede, palette dei comandi, impostazioni.
 import {
   api, loadConfig, saveConfig, config, isConfigured, hasBridge, isMacApp, onCommand,
-  canAsk, aiAsk, onAskProgress,
+  canAsk,
   isLocalMode, canUseLocalEngine, engineStatus, engineRetry, engineDefaultVault, pickFolder, onEngineStatus, sourceName,
   aiAvailable, aiStatus, aiModels, onAiStatus,
   isOffline, onVaultStatus, vaultState, syncNow, revealVault,
@@ -10,6 +10,7 @@ import { NoteView, FileView, FolderView } from "./views.js";
 import { Explorer, SearchPanel, TagsPanel, BookmarksPanel, SuggestionsPanel, InfoPanel, kindDot } from "./panels.js";
 import { GraphView } from "./graph.js";
 import { AgendaView, newEventDialog, newTaskDialog } from "./agenda.js";
+import { AnswersView } from "./answers.js";
 import { h, icon, toast, modal, displayName, linkFor } from "./util.js";
 
 const WS_KEY = "atlante-workspace";
@@ -129,7 +130,7 @@ class App {
         h("button", { class: "rib-btn", title: "Grafo (⌘G)", "aria-label": "Apri il grafo", onclick: () => this.openGraph("global") }, icon("graph", 20)),
         h("button", { class: "rib-btn", title: "Grafo per anni", "aria-label": "Apri il grafo per anni", onclick: () => this.openGraph("global", null, "years") }, icon("years", 20)),
         h("button", { class: "rib-btn", title: "Agenda", "aria-label": "Apri l'agenda", onclick: () => this.openAgenda() }, icon("calendar", 20)),
-        canAsk() ? h("button", { class: "rib-btn", title: "Chiedi alla wiki", "aria-label": "Fai una domanda alla wiki", onclick: () => this.askWiki() }, icon("ask", 20)) : null,
+        canAsk() ? h("button", { class: "rib-btn", title: "Chiedi alla wiki", "aria-label": "Fai una domanda alla wiki", onclick: () => this.openAnswers() }, icon("ask", 20)) : null,
         h("button", { class: "rib-btn", title: "Nuova nota (⌘N)", "aria-label": "Nuova nota", onclick: () => this.newNote() }, icon("note", 20))),
       h("div", { class: "rib-bottom" },
         h("button", { class: "rib-btn", title: "Impostazioni", "aria-label": "Impostazioni", onclick: () => this.openSettings() }, icon("settings", 20))));
@@ -216,7 +217,7 @@ class App {
         if (it.is_dir) type = "folder";
       } catch (e) { toast(e.message, "error"); return; }
     }
-    const reuse = !newTab && this.active && !["graph", "agenda"].includes(this.active.type) ? this.active : null;
+    const reuse = !newTab && this.active && !["graph", "agenda", "answers"].includes(this.active.type) ? this.active : null;
     const tab = reuse || this.createTab();
     if (reuse) { await reuse.view.beforeClose?.(); reuse.view.destroy(); }
     tab.id = id;
@@ -247,7 +248,7 @@ class App {
   activate(tab) {
     this.active = tab;
     // nell'agenda il pannello informazioni non serve: lo nascondo senza toccare la tua preferenza
-    document.body.classList.toggle("agenda-active", tab.type === "agenda");
+    document.body.classList.toggle("agenda-active", ["agenda", "answers"].includes(tab.type)); // senza pannello a destra
     this.tabs.forEach((t) => {
       t.host.hidden = t !== tab;
       t.el.classList.toggle("active", t === tab);
@@ -257,14 +258,14 @@ class App {
     tab.view?.activate?.();
     tab.view?.graph?.resize?.();
     this.explorer?.highlight(tab.id);
-    this.info?.update(["graph", "agenda"].includes(tab.type) ? null : tab.view);
+    this.info?.update(["graph", "agenda", "answers"].includes(tab.type) ? null : tab.view);
     this.updateWordCount();
     this.saveWorkspace();
   }
 
   refreshTabLabel(tab) {
     const title = tab.view?.title || "…";
-    const ic = { graph: "graph", agenda: "calendar" }[tab.type];
+    const ic = { graph: "graph", agenda: "calendar", answers: "ask" }[tab.type];
     tab.label.replaceChildren(...(ic ? [icon(ic, 13)] : []), title);
     tab.el.title = tab.id ? (tab.id.startsWith("n:") ? "Note/" : "Server/") + tab.id.slice(2) : title;
     if (tab === this.active) document.title = `${title} — Atlante`;
@@ -334,50 +335,17 @@ class App {
     this.activate(tab);
   }
 
-  /** Domanda alla wiki: qwen sceglie le pagine, risponde, e la risposta diventa una nota in wiki/risposte. */
-  askWiki() {
-    const q = h("textarea", { rows: 3, placeholder: "Es. Cosa è successo con il condominio nel 2025?", "aria-label": "La tua domanda" });
-    const status = h("p", { class: "settings-msg", role: "status" });
-    const go = h("button", { type: "submit", class: "btn primary" }, "Chiedi");
-    let busy = false;
-    const form = h("form", {
-      class: "prompt ask-form",
-      onsubmit: async (e) => {
-        e.preventDefault();
-        const text = q.value.trim();
-        if (!text || busy) return;
-        busy = true;
-        go.disabled = true;
-        q.disabled = true;
-        status.className = "settings-msg";
-        status.textContent = "Cerco nella wiki…";
-        onAskProgress((msg) => { status.textContent = msg; });
-        const r = await aiAsk(text);
-        onAskProgress(null);
-        busy = false;
-        if (!r.ok) {
-          go.disabled = false;
-          q.disabled = false;
-          status.className = "settings-msg err";
-          status.textContent = r.error;
-          return;
-        }
-        m.close();
-        this.explorer.refresh();
-        this.open(r.id, { newTab: true });
-      },
-    },
-    h("h2", {}, "Chiedi alla wiki"),
-    h("p", { class: "muted small" }, "qwen cerca tra le pagine della wiki e i riassunti dei file, poi risponde. " +
-      "La risposta resta salvata in wiki/risposte, così la ritrovi e arricchisce la wiki. Ci vuole qualche minuto."),
-    q,
-    status,
-    h("div", { class: "row end" },
-      h("button", { type: "button", class: "btn ghost", onclick: () => m.close() }, "Chiudi"),
-      go));
-    q.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) form.requestSubmit(); });
-    const m = modal(form, { onClose: () => onAskProgress(null) });
-    q.focus();
+  /** Domande alla wiki: una scheda con la domanda in alto e l'avanzamento di ognuna. */
+  openAnswers() {
+    let tab = this.tabs.find((t) => t.id === "answers");
+    if (!tab) {
+      tab = this.createTab();
+      tab.id = "answers";
+      tab.type = "answers";
+      tab.view = new AnswersView(tab.host, this.ctx);
+    }
+    this.activate(tab);
+    tab.view.focus();
   }
 
   openAgenda() {
@@ -421,6 +389,7 @@ class App {
     for (const t of ws.tabs) {
       if (!t.id) continue;
       if (t.type === "agenda") { this.openAgenda(); continue; }
+      if (t.type === "answers") { this.openAnswers(); continue; }
       if (t.type === "graph") {
         if (t.id === "graph:global") this.openGraph("global", null, t.mode || "links");
         else this.openGraph("local", t.id.slice("graph:local:".length));
@@ -588,7 +557,7 @@ class App {
       { label: "Apri il grafo", key: "⌘G", run: () => this.openGraph("global") },
       { label: "Apri il grafo per anni", run: () => this.openGraph("global", null, "years") },
       { label: "Apri l'agenda", run: () => this.openAgenda() },
-      ...(canAsk() ? [{ label: "Chiedi alla wiki", run: () => this.askWiki() }] : []),
+      ...(canAsk() ? [{ label: "Chiedi alla wiki", run: () => this.openAnswers() }] : []),
       { label: "Nuovo evento", run: () => this.newEvent() },
       { label: "Nuova todo (senza evento)", run: async () => {
         const r = await newTaskDialog();

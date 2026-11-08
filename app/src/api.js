@@ -148,6 +148,9 @@ export const aiModels = () => (bridge?.aiModels ? bridge.aiModels() : Promise.re
 export const onAiStatus = (fn) => bridge?.onAiStatus?.(fn);
 export const canAsk = () => Boolean(bridge?.aiAsk);
 export const aiAsk = (q) => bridge.aiAsk(q);
-let askListener = null;
-if (typeof window !== "undefined") bridge?.onAiAskProgress?.((msg) => askListener?.(msg));
-export const onAskProgress = (fn) => { askListener = fn; };
+export const askJobs = () => (bridge?.aiAskJobs ? bridge.aiAskJobs() : Promise.resolve([]));
+export const askClear = () => (bridge?.aiAskClear ? bridge.aiAskClear() : Promise.resolve([]));
+const jobListeners = new Set();
+if (typeof window !== "undefined") bridge?.onAiAskJobs?.((jobs) => jobListeners.forEach((fn) => fn(jobs)));
+/** Ascolta la coda delle domande; restituisce la funzione per smettere. */
+export const onAskJobs = (fn) => { jobListeners.add(fn); return () => jobListeners.delete(fn); };

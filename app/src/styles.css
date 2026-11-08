@@ -740,4 +740,43 @@ button.link:hover { background: var(--bg-hover); }
 .settings-pane { display: flex; flex-direction: column; gap: 10px; }
 .settings-pane[hidden] { display: none; }
 .settings-ai { display: flex; flex-direction: column; gap: 10px; }
+
+/* ------------------------------------------------------------------ domande alla wiki (scheda) */
+.answers-view { overflow-y: auto; background: var(--bg); }
+.ans-wrap { max-width: 760px; margin: 0 auto; padding: 28px 28px 48px; display: flex; flex-direction: column; gap: 22px; }
+.ans-head h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 20px; }
+.ans-head p { margin: 0; max-width: 62ch; }
+.ans-ask { display: flex; gap: 8px; align-items: flex-end; }
+.ans-ask textarea {
+  flex: 1; font: inherit; resize: vertical; min-height: 54px; padding: 10px 12px; color: var(--text);
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--r-m);
+}
+.ans-ask textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ans-section h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+.ans-section-head { display: flex; align-items: center; justify-content: space-between; }
+.ans-section-head h3 { margin: 0; }
+.ans-section-head + ul { margin-top: 8px; }
+.ans-jobs, .ans-saved { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ans-job { border: 1px solid var(--line-soft); border-radius: var(--r-m); padding: 10px 12px; background: var(--bg-elev); display: flex; flex-direction: column; gap: 7px; }
+.ans-job-top { display: flex; align-items: center; gap: 10px; }
+.ans-q { flex: 1; font-weight: 600; line-height: 1.35; }
+.ans-bar { height: 5px; border-radius: 3px; background: var(--bg-hover); overflow: hidden; }
+.ans-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.6s ease; }
+.ans-job.running .ans-bar span {
+  background-image: linear-gradient(90deg, transparent 0, rgba(255,255,255,0.35) 50%, transparent 100%);
+  background-size: 200% 100%; background-color: var(--accent); animation: ans-shine 1.6s linear infinite;
+}
+@keyframes ans-shine { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.ans-job.done .ans-bar span { background: var(--ok); }
+.ans-job.error .ans-bar span { background: var(--danger); width: 100% !important; opacity: 0.5; }
+.ans-job.queued .ans-q { color: var(--text-muted); }
+.ans-status { font-size: 12px; color: var(--text-muted); }
+.ans-job.error .ans-status { color: var(--danger); }
+.ans-empty { padding: 4px 2px; }
+.ans-saved-row {
+  width: 100%; display: flex; justify-content: space-between; gap: 12px; text-align: left; border: 0; background: none;
+  font: inherit; padding: 6px 8px; border-radius: var(--r-s); cursor: pointer; color: var(--text);
+}
+.ans-saved-row:hover { background: var(--bg-hover); }
+.ans-saved { gap: 0; }
 .settings-pane .settings-ai { border: 0; padding: 0; margin: 0; background: none; }
